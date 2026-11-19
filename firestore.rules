@@ -1,0 +1,90 @@
+rules_version = '2';
+// Security rules for 1v1 Duel (online mode).
+// Paste this whole file into Firebase console -> Firestore Database -> Rules -> Publish
+// (or deploy from a terminal: npx firebase-tools deploy --only firestore).
+//
+// What they guarantee:
+//  - Only signed-in players can read anything.
+//  - You can only edit YOUR OWN profile; your 8-digit ID can never change or be reused.
+//  - Score can only move by a plausible amount per write (−60…+60), never below 0.
+//    (A determined cheater could still fake answers from the browser — fully
+//     cheat-proof scoring needs Cloud Functions, which require the paid Blaze plan.)
+//  - Friend requests: only you can send yours; only the OTHER person can accept.
+//  - Duel challenges: only between accepted friends, readable only by the two players.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+
+    function validUser(d) {
+      return d.name is string && d.name.size() > 0 && d.name.size() <= 40
+        && d.surname is string && d.surname.size() > 0 && d.surname.size() <= 40
+        && d.publicId is string && d.publicId.size() == 8
+        && d.score is int && d.score >= 0
+        && d.monthScore is int && d.monthScore >= 0
+        && d.monthKey is string && d.monthKey.size() == 7
+        && (d.avatar == null || (d.avatar is string && d.avatar.size() < 100000));
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if signedIn() && me() == uid && validUser(request.resource.data)
+        && request.resource.data.score == 0 && request.resource.data.monthScore == 0
+        && get(/databases/$(database)/documents/ids/$(request.resource.data.publicId)).data.uid == me();
+      allow update: if signedIn() && me() == uid && validUser(request.resource.data)
+        && request.resource.data.publicId == resource.data.publicId
+        && request.resource.data.score - resource.data.score <= 60
+        && request.resource.data.score - resource.data.score >= -60
+        && ((request.resource.data.monthKey != resource.data.monthKey
+               && request.resource.data.monthScore <= 60)
+            || (request.resource.data.monthKey == resource.data.monthKey
+               && request.resource.data.monthScore - resource.data.monthScore <= 60
+               && request.resource.data.monthScore - resource.data.monthScore >= -60));
+      allow delete: if false;
+    }
+
+    // 8-digit public ID -> uid. Create-only, so an ID can never be taken over.
+    match /ids/{pid} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == me() && pid.size() == 8;
+      allow update, delete: if false;
+    }
+
+    // Doc id = the two uids sorted and joined with "_".
+    match /friendships/{fid} {
+      allow read: if signedIn() && (resource == null || me() in resource.data.users);
+      allow create: if signedIn()
+        && request.resource.data.requester == me()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.users is list && request.resource.data.users.size() == 2
+        && me() in request.resource.data.users
+        && request.resource.data.users[0] < request.resource.data.users[1]
+        && fid == request.resource.data.users[0] + '_' + request.resource.data.users[1];
+      allow update: if signedIn() && me() in resource.data.users
+        && resource.data.requester != me()
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.users == resource.data.users
+        && request.resource.data.requester == resource.data.requester;
+      allow delete: if signedIn() && me() in resource.data.users;
+    }
+
+    match /challenges/{cid} {
+      function friendship(pair) { return get(/databases/$(database)/documents/friendships/$(pair)).data; }
+      allow read: if signedIn() && (resource == null || me() == resource.data.from || me() == resource.data.to);
+      allow create: if signedIn()
+        && request.resource.data.from == me()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.to is string && request.resource.data.to != me()
+        && request.resource.data.qs is list && request.resource.data.qs.size() <= 10
+        && friendship(request.resource.data.pair).status == 'accepted'
+        && me() in friendship(request.resource.data.pair).users
+        && request.resource.data.to in friendship(request.resource.data.pair).users;
+      allow update: if signedIn() && (me() == resource.data.from || me() == resource.data.to)
+        && request.resource.data.from == resource.data.from
+        && request.resource.data.to == resource.data.to
+        && request.resource.data.qs == resource.data.qs
+        && request.resource.data.subj == resource.data.subj;
+      allow delete: if false;
+    }
+  }
+}

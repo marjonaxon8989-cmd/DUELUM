@@ -1,0 +1,10 @@
+# never commit secrets
+.env
+.env.*
+.dev.vars
+# tooling caches
+node_modules/
+.wrangler/
+.netlify/
+.DS_Store
+Thumbs.db
