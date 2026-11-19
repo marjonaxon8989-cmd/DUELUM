@@ -16,7 +16,14 @@
 // These values are NOT secret. Firebase web config is meant to be public; your
 // data is protected by the security rules in firestore.rules, not by hiding this.
 
-const FIREBASE_CONFIG = null;
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAhqy3TZTMRsBbycQsKkoeIUKPpZ0tjuig",
+  authDomain: "planning-with-ai-a8b9e.firebaseapp.com",
+  projectId: "planning-with-ai-a8b9e",
+  storageBucket: "planning-with-ai-a8b9e.firebasestorage.app",
+  messagingSenderId: "201370611133",
+  appId: "1:201370611133:web:f8aeee3bc81b69c33cf6d4"
+};
 
 /* Example — replace null above with your own object, e.g.:
 const FIREBASE_CONFIG = {
