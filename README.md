@@ -10,7 +10,7 @@ O'zbekiston maktab o'quvchilari uchun 1v1 va 4v4 bilim musobaqasi. Sayt: **https
 
 ```
 index.html               barcha ekranlar
-css/style.css            dizayn: kunduzgi/tungi rejim, SVG ikonlar (emoji yo'q)
+css/style.css            dizayn: kirish animatsiyasi, kunduzgi/tungi rejim, SVG ikonlar (emoji yo'q)
 js/icons.js              barcha ikonlar (inline SVG)
 js/i18n.js               matnlar 3 tilda (uz / ru / en)
 js/data.js               fanlar, qo'lda yozilgan savollar, ligalar, premium narxlari, davlatlar
@@ -70,6 +70,9 @@ O'zgartirish: `js/data.js` → `LEAGUES`.
   Son halol: Firestore qoidalari obunachilar sonini faqat haqiqiy obuna hujjati bilan birga
   +1 / −1 o'zgartirishga ruxsat beradi.
 - **Qidiruv:** 8 xonali ID yoki ism/familiya bo'yicha.
+- **Xabarlar (chat):** Instagramdagidek. Bir-biriga obuna bo'lganlar (yoki do'stlar) yozisha oladi;
+  suhbatlar ro'yxati eng yangisi tepada, o'qilmaganlar belgilanadi. Profildagi 3 nuqta menyusida
+  ham "Xabar yozish" bor. Xabarni faqat ikki ishtirokchi o'qiy oladi (Firestore qoidalari).
 - **Do'stlar:** so'rov yuborish/qabul qilish, do'stni 1v1 duelga chaqirish (bir xil savollar,
   jonli hisob, stikerlar).
 - **Kirish:** telefon + parol. Brauzer parolni saqlashni taklif qiladi. Kirishda davlat kodi

@@ -11,6 +11,9 @@
 //   ids/{publicId}          { uid } — lets friends find you by your 8-digit ID
 //   follows/{fromUid_toUid} one doc per follow; users.followers / users.following
 //                           are counters kept in step with it by firestore.rules
+//   chats/{uidA_uidB}       a conversation: users (sorted), lastText, lastFrom,
+//                           lastAt, readAt.{uid}; messages in chats/{id}/messages
+//                           (allowed when one follows the other, or they are friends)
 //   phones/{sha256(number)} { dial } — remembers the country code of a phone
 //                           number, so signing in works even if the wrong country
 //                           is selected on the login screen (no number is stored)
@@ -216,6 +219,39 @@ const Cloud = (function(){
       b.update(db.collection('users').doc(uid),{following:FV.increment(-1)});
       await b.commit(); delete userCache[other];
     },
+
+    /* ----- direct messages ----- */
+    chatIdWith(other){ return pairId(uid,other); },
+    // Creates the conversation document if needed (rules require a follow or friendship).
+    async ensureChat(other){
+      const id=pairId(uid,other), ref=db.collection('chats').doc(id);
+      const s=await ref.get();
+      if(!s.exists) await ref.set({users:[uid,other].sort(),createdAt:FV.serverTimestamp(),lastAt:FV.serverTimestamp(),lastText:'',lastFrom:'',readAt:{}});
+      return id;
+    },
+    // cb([{id, other, lastText, lastFrom, lastAt(ms), unread}]) newest first
+    watchChats(cb){
+      return db.collection('chats').where('users','array-contains',uid).limit(100).onSnapshot(q=>{
+        cb(q.docs.map(d=>{ const x=d.data(), last=ms(x.lastAt), read=x.readAt&&x.readAt[uid]?ms(x.readAt[uid]):0;
+          return {id:d.id, other:x.users.find(u=>u!==uid), lastText:x.lastText||'', lastFrom:x.lastFrom||'', lastAt:last,
+            unread: !!x.lastText && x.lastFrom!==uid && last>read+500}; }).filter(c=>c.lastText||c.lastFrom).sort((a,b)=>b.lastAt-a.lastAt));
+      },e=>console.warn('[Cloud] chats',e));
+    },
+    // cb([{id, from, text, at(ms), pending}]) oldest first, last 150
+    watchMessages(cid,cb){
+      return db.collection('chats').doc(cid).collection('messages').orderBy('at','desc').limit(150).onSnapshot({includeMetadataChanges:true},q=>{
+        cb(q.docs.map(d=>{ const x=d.data({serverTimestamps:'estimate'}); return {id:d.id,from:x.from,text:x.text,at:ms(x.at),pending:d.metadata&&d.metadata.hasPendingWrites}; }).reverse());
+      },e=>console.warn('[Cloud] messages',e));
+    },
+    async sendMessage(cid,text){
+      text=String(text).trim().slice(0,1000); if(!text) return;
+      const chat=db.collection('chats').doc(cid), b=db.batch();
+      b.set(chat.collection('messages').doc(),{from:uid,text,at:FV.serverTimestamp()});
+      const u={lastText:text.slice(0,120),lastFrom:uid,lastAt:FV.serverTimestamp()}; u['readAt.'+uid]=FV.serverTimestamp();
+      b.update(chat,u);
+      await b.commit();
+    },
+    markRead(cid){ const u={}; u['readAt.'+uid]=FV.serverTimestamp(); return db.collection('chats').doc(cid).update(u).catch(()=>{}); },
 
     /* ----- users / friends ----- */
     async getUser(id,force){

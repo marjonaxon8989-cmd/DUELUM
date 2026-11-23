@@ -14,6 +14,14 @@
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+<!-- INTRO SPLASH: animated DUELUM wordmark on every visit (≈2 s, skipped on reduced motion) -->
+<div id="splash" aria-hidden="true">
+  <div class="sp-glow"></div>
+  <div class="sp-mark"><svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/><path d="M14.5 6.5 18 3h3v3l-3.5 3.5"/><path d="m5 14 4 4"/><path d="m7 17-3 3"/><path d="m3 19 2 2"/></svg></div>
+  <div class="sp-word"><span>D</span><span>U</span><span>E</span><span>L</span><span>U</span><span>M</span></div>
+  <div class="sp-line"></div>
+  <div class="sp-tag">BILIMLAR DUELI</div>
+</div>
 <div id="app">
 
 <!-- BOOT -->
@@ -92,6 +100,7 @@
     <div class="actions">
       <button class="iconbtn" onclick="toggleTheme()" aria-label="theme"><span class="themeIcon"></span></button>
       <button class="iconbtn" onclick="openBell()" aria-label="notifications"><i data-icon="bell"></i><span class="dotbadge" id="bellDot"></span></button>
+      <button class="iconbtn" onclick="go('chats')" aria-label="messages"><i data-icon="send"></i><i class="cbadge" id="chatBadge" style="display:none">0</i></button>
       <button class="iconbtn" onclick="toggleMenu(true)" aria-label="menu"><i data-icon="menu"></i></button>
     </div>
   </header>
@@ -207,9 +216,33 @@
   <header class="appbar">
     <button class="iconbtn" onclick="upBack()"><i data-icon="back"></i></button>
     <b class="appbar-title" id="upTitle"></b>
-    <span class="iconbtn ghostspace"></span>
+    <button class="iconbtn" onclick="openUserMore()" aria-label="more"><i data-icon="dots"></i></button>
   </header>
   <div id="upContent"></div>
+</div>
+
+<!-- MESSAGES: list of conversations (newest first, one under another) -->
+<div class="screen" id="chats">
+  <header class="appbar">
+    <button class="iconbtn" onclick="go('home')"><i data-icon="back"></i></button>
+    <b class="appbar-title" data-i18n="messages">Xabarlar</b>
+    <button class="iconbtn" onclick="go('friends')" aria-label="new"><i data-icon="edit"></i></button>
+  </header>
+  <div id="chatList"></div>
+</div>
+
+<!-- ONE CONVERSATION -->
+<div class="screen" id="chat">
+  <header class="appbar">
+    <button class="iconbtn" onclick="closeChat()"><i data-icon="back"></i></button>
+    <div class="chathead" onclick="chatOpenProfile()"><div class="av sm" id="chatAv"></div><div><b id="chatName"></b><span class="muted small" id="chatSub"></span></div></div>
+    <span class="iconbtn ghostspace"></span>
+  </header>
+  <div id="msgList"></div>
+  <form class="msgbar" onsubmit="event.preventDefault();sendMsg()">
+    <input id="msgInput" maxlength="1000" autocomplete="off" data-i18n-ph="msgPh" placeholder="Xabar yozing...">
+    <button type="submit" class="sendbtn" aria-label="send"><i data-icon="send" data-size="20"></i></button>
+  </form>
 </div>
 
 <!-- TEAM BATTLE 4v4 -->
@@ -333,6 +366,7 @@
       <input class="field" id="newPassInput" type="password" autocomplete="new-password" data-i18n-ph="newPass" placeholder="Yangi parol">
       <button onclick="savePassword()" class="on2" data-i18n="save">Saqlash</button>
     </div>
+    <div class="mrow" onclick="toggleMenu(false);go('chats')"><i data-icon="send"></i><span data-i18n="messages">Xabarlar</span></div>
     <div class="mrow" onclick="toggleMenu(false);go('calculator')"><i data-icon="calc"></i><span data-i18n="calcTitle">Kalkulyator</span></div>
     <div class="mrow" onclick="toggleMenu(false);go('premium')"><i data-icon="crown"></i><span data-i18n="premiumTitle">Premium</span></div>
     <div class="mdiv"></div>

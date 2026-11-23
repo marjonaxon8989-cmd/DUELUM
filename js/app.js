@@ -14,7 +14,7 @@
 //  - Questions come from questions.js; every question a player has seen is
 //    remembered (Store.getSeen/addSeen) so it does not come back to them.
 
-const NAV_SCREENS=['home','rating','friends','profile'];
+const NAV_SCREENS=['home','rating','friends','profile','chats'];
 const ROUND_LIMIT_1V1=10, ROUND_LIMIT_TEAM=50, QUESTION_SECONDS=15, SEARCH_SECONDS=15;
 
 let curSubj='math', qi=0, timer=null, tleft=QUESTION_SECONDS, meScore=0, aiScore=0, fiftyUsed=false, hintUses=0, locked=false, isLogic=false, isTeam=false;
@@ -96,6 +96,8 @@ function go(id){
   if(id==='friends') renderFriends();
   if(id==='teamBattle'){ teamState='hub'; renderTeamContent(); }
   if(id==='premium') renderPlans();
+  if(id==='chats') renderChats();
+  if(id!=='chat') stopChat();
   if(id!=='duel' && id!=='searching') showPendingChallenge();
 }
 function upBack(){ go(prevScreen && prevScreen!=='userProfile' ? prevScreen : 'friends'); }
@@ -399,9 +401,24 @@ function renderUserProfile(u,following){
       <div class="pfbadges">${leagueBadge(u.score)}</div></div>
     <div class="pfactions">
       <button class="btn ${following?'outline':'primary'}" id="followBtn" onclick="toggleFollow('${u.uid}',${following?1:0})">${following?icon('userCheck',18)+' '+t('followingBtn'):t('followBtn')}</button>
-      ${friendBtn}
-    </div>`;
+      <button class="btn outline" onclick="openChatWith('${u.uid}')">${icon('send',16)} ${t('messageBtn')}</button>
+    </div>
+    <div class="pfactions" style="padding-top:0">${friendBtn.replace('btn primary sm','btn outline').replace('btn outline sm','btn outline')}</div>`;
+  upUser=u; upFollowing=following;
 }
+let upUser=null, upFollowing=false;
+// the "three dots" menu on a player's profile
+function openUserMore(){
+  if(!upUser) return; const u=upUser, fs=friendStatus(u.uid);
+  openModal(`<div class="av md" style="margin:0 auto 10px">${avatarHtml(u)}</div><h2>${esc(u.name+' '+u.surname)}</h2>
+    <div class="list sheetlist" style="margin:14px 0 0;text-align:left">
+      <div class="listrow" onclick="closeModal();openChatWith('${u.uid}')">${icon('send',20)}<span>${t('messageBtn')}</span></div>
+      <div class="listrow" onclick="closeModal();toggleFollow('${u.uid}',${upFollowing?1:0})">${icon(upFollowing?'userCheck':'userPlus',20)}<span>${upFollowing?t('unfollowBtn'):t('followBtn')}</span></div>
+      ${fs==='friend'?`<div class="listrow" onclick="closeModal();openChallenge('${u.uid}')">${icon('swords',20)}<span>${t('challengeTitle')}</span></div>`:''}
+      <div class="listrow" onclick="closeModal();copyId('${esc(u.id)}')">${icon('copy',20)}<span>${t('copyId')}</span></div>
+    </div><button class="btn ghost" style="margin-top:8px" onclick="closeModal()">${t('cancel')}</button>`);
+}
+function copyId(id){ if(navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(id).then(()=>toast(t('copied'))); else prompt('ID',id); }
 async function toggleFollow(uid,isF){
   const btn=$('followBtn'); if(btn) btn.disabled=true;
   try{
@@ -522,6 +539,8 @@ const BELL_EVERY=12*3600*1000;   // the subscribe reminders come back every 12 h
 function bellItems(){
   const items=[];
   const reqs=friendsState.filter(f=>f.incoming).length;
+  const unreadMsgs=chatsState.filter(c=>c.unread).length;
+  if(unreadMsgs) items.push({ic:'send',col:'#6c4bf4',title:t('newMessages'),sub:unreadMsgs+' ',on:"closeBell();go('chats')"});
   if(incomingCh.length) items.push({ic:'swords',col:'#e5484d',title:t('pendingChallenges'),sub:incomingCh.length+' ',on:"closeBell();go('friends')"});
   if(reqs) items.push({ic:'userPlus',col:'#6c4bf4',title:t('incomingReqs'),sub:reqs+' ',on:"closeBell();go('friends')"});
   if(Cloud.enabled && profile && !profile.tgUsername && tgEnabled()) items.push({ic:'send',col:'#229ed9',title:t('tgLinkTitle'),sub:t('tgLinkSub'),on:"closeBell();startTgLink()"});
@@ -540,7 +559,7 @@ function openBell(){
 function closeBell(){ $('bellOverlay').classList.remove('on'); }
 function updateBellDot(){
   const due = Date.now()-Store.getBellSeen()>BELL_EVERY;
-  const pending = incomingCh.length || friendsState.some(f=>f.incoming);
+  const pending = incomingCh.length || friendsState.some(f=>f.incoming) || (typeof chatsState!=='undefined' && chatsState.some(c=>c.unread));
   $('bellDot').classList.toggle('on', !!(due||pending));
 }
 setInterval(updateBellDot,60000);
@@ -718,6 +737,7 @@ function startCloud(){
     await Promise.all(list.map(async f=>{ try{ friendUsers[f.other]=await Cloud.getUser(f.other); }catch(e){} }));
     updateFriendsBadge(); if($('friends').classList.contains('active')) renderFriends();
   });
+  startChatsWatch();
   unsubIncoming=Cloud.watchIncoming(list=>{
     incomingCh=list; updateFriendsBadge();
     if(shownChallengeId && !list.some(c=>c.id===shownChallengeId)) closeModal();
@@ -733,6 +753,7 @@ function startCloud(){
 }
 function stopCloudWatchers(){
   if(unsubFriends) unsubFriends(); if(unsubIncoming) unsubIncoming();
+  if(typeof unsubChats==='function') unsubChats(); unsubChats=null; chatsState=[]; stopChat(); updateChatBadge();
   unsubFriends=unsubIncoming=null; friendsState=[]; incomingCh=[]; clearInterval(startCloud._t); updateFriendsBadge(); closeModal();
 }
 function updateFriendsBadge(){ const n=friendsState.filter(f=>f.incoming).length+incomingCh.length; const b=$('friendsBadge'); b.textContent=n; b.style.display=n?'flex':'none'; updateBellDot(); }
@@ -815,6 +836,75 @@ function onChallengeUpdate(ch){
 }
 function stopPvp(){ if(pvp && pvp.unsub) pvp.unsub(); pvp=null; }
 
+/* ---------- direct messages (Instagram-style) ---------- */
+let chatsState=[], unsubChats=null, chatCid=null, chatOther=null, unsubMsgs=null;
+function startChatsWatch(){
+  if(unsubChats) unsubChats();
+  unsubChats=Cloud.watchChats(async list=>{
+    chatsState=list;
+    await Promise.all(list.filter(c=>!friendUsers[c.other]).map(async c=>{ try{ friendUsers[c.other]=await Cloud.getUser(c.other); }catch(e){} }));
+    updateChatBadge();
+    if($('chats').classList.contains('active')) renderChats();
+    if(chatCid){ const c=list.find(x=>x.id===chatCid); if(c && c.unread) Cloud.markRead(chatCid); }
+  });
+}
+function updateChatBadge(){
+  const n=chatsState.filter(c=>c.unread && c.id!==chatCid).length, b=$('chatBadge');
+  b.textContent=n; b.style.display=n?'flex':'none'; updateBellDot();
+}
+function timeShort(ms){
+  if(!ms) return ''; const d=new Date(ms), now=new Date();
+  if(d.toDateString()===now.toDateString()) return d.toTimeString().slice(0,5);
+  const days=Math.floor((now-d)/86400000); if(days<7) return days<1?'1d':days+'d';
+  return d.toLocaleDateString();
+}
+function renderChats(){
+  const box=$('chatList'); if(!box) return;
+  if(!Cloud.enabled){ box.innerHTML=`<div class="note">${t('friendsLocalNote')}</div>`; return; }
+  if(!chatsState.length){ box.innerHTML=`<div class="center-empty">${icon('send',44)}<b>${t('noChatsTitle')}</b><span class="muted">${t('noChats')}</span>
+    <button class="btn primary sm" style="margin-top:8px" onclick="go('friends')">${t('findPeople')}</button></div>`; return; }
+  box.innerHTML=chatsState.map(c=>{ const u=friendUsers[c.other];
+    const prefix = c.lastFrom===(profile&&profile.uid) ? t('youPrefix')+' ' : '';
+    return `<div class="crow${c.unread?' unread':''}" onclick="openChatWith('${c.other}')"><div class="av md">${avatarHtml(u)}</div>
+      <div class="info"><b>${userLabel(u)}</b><span>${esc(prefix+c.lastText)}</span></div>
+      <div class="time">${timeShort(c.lastAt)}</div>${c.unread?'<div class="udot"></div>':''}</div>`; }).join('');
+}
+async function openChatWith(other){
+  if(!Cloud.enabled){ toast(t('friendsLocalNote')); return; }
+  let u=friendUsers[other]; if(!u){ try{ u=friendUsers[other]=await Cloud.getUser(other,true); }catch(e){} }
+  let cid;
+  try{ cid=await Cloud.ensureChat(other); }
+  catch(e){ console.warn(e); toast(e&&e.code==='permission-denied'?t('chatNeedFollow'):cloudErrText(e)); return; }
+  stopChat(); chatCid=cid; chatOther=other;
+  $('chatName').textContent=u?u.name+' '+u.surname:''; $('chatSub').textContent=u?'ID '+u.id:''; $('chatAv').innerHTML=avatarHtml(u);
+  $('msgList').innerHTML='<div class="note">…</div>'; $('msgInput').value='';
+  go('chat');
+  unsubMsgs=Cloud.watchMessages(cid,renderMsgs);
+  Cloud.markRead(cid); updateChatBadge();
+}
+function renderMsgs(list){
+  const box=$('msgList'), atBottom=box.scrollHeight-box.scrollTop-box.clientHeight<80, me=profile&&profile.uid;
+  if(!list.length){ box.innerHTML=`<div class="note" style="text-align:center">${t('sayHi')}</div>`; return; }
+  let lastDay='', h='';
+  list.forEach(m=>{
+    const day=m.at?new Date(m.at).toDateString():'';
+    if(day && day!==lastDay){ h+=`<div class="msgday">${new Date(m.at).toLocaleDateString()}</div>`; lastDay=day; }
+    h+=`<div class="msg ${m.from===me?'me':'them'}${m.pending?' pending':''}">${esc(m.text)}<span class="msgtime">${m.at?new Date(m.at).toTimeString().slice(0,5):''}</span></div>`;
+  });
+  box.innerHTML=h;
+  if(atBottom || list.length && list[list.length-1].from===me) box.scrollTop=box.scrollHeight;
+  if(chatCid) Cloud.markRead(chatCid);
+}
+async function sendMsg(){
+  const inp=$('msgInput'), text=inp.value.trim(); if(!text||!chatCid) return;
+  inp.value='';
+  try{ await Cloud.sendMessage(chatCid,text); }catch(e){ console.warn(e); toast(e&&e.code==='permission-denied'?t('chatNeedFollow'):cloudErrText(e)); inp.value=text; }
+  const box=$('msgList'); box.scrollTop=box.scrollHeight;
+}
+function stopChat(){ if(unsubMsgs) unsubMsgs(); unsubMsgs=null; if(chatCid){ chatCid=null; updateChatBadge(); } }
+function closeChat(){ go('chats'); }
+function chatOpenProfile(){ if(chatOther) openUser(chatOther); }
+
 /* ---------- swipe ---------- */
 let tsx=0,tsy=0;
 $('app').addEventListener('touchstart',e=>{ tsx=e.touches[0].clientX; tsy=e.touches[0].clientY; },{passive:true});
@@ -825,6 +915,11 @@ $('app').addEventListener('touchend',e=>{
 },{passive:true});
 
 /* ---------- boot ---------- */
+function hideSplash(){
+  const sp=$('splash'); if(!sp || sp.classList.contains('hide')) return;
+  sp.classList.add('hide'); setTimeout(()=>sp.remove(),700);
+}
+setTimeout(hideSplash,2300);                       // the intro plays once per visit
 function boot(){
   hydrateIcons(); applyThemeIcons(); applyLinks();
   const savedLang=Store.getLang(); if(savedLang && I18N[savedLang]) lang=savedLang;

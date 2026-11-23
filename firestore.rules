@@ -67,6 +67,34 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    // Direct messages. A conversation can be opened only if one of the two follows
+    // the other, or they are friends. Only the two participants can read or write.
+    function chatUsers(cid) { return get(/databases/$(database)/documents/chats/$(cid)).data.users; }
+    match /chats/{cid} {
+      allow read: if signedIn() && (resource == null || me() in resource.data.users);
+      allow create: if signedIn()
+        && request.resource.data.users is list && request.resource.data.users.size() == 2
+        && me() in request.resource.data.users
+        && request.resource.data.users[0] < request.resource.data.users[1]
+        && cid == request.resource.data.users[0] + '_' + request.resource.data.users[1]
+        && (exists(followDoc(request.resource.data.users[0], request.resource.data.users[1]))
+            || exists(followDoc(request.resource.data.users[1], request.resource.data.users[0]))
+            || (exists(/databases/$(database)/documents/friendships/$(cid))
+                && get(/databases/$(database)/documents/friendships/$(cid)).data.status == 'accepted'));
+      allow update: if signedIn() && me() in resource.data.users
+        && request.resource.data.users == resource.data.users
+        && request.resource.data.get('lastText', '').size() <= 120;
+      allow delete: if false;
+      match /messages/{mid} {
+        allow read: if signedIn() && me() in chatUsers(cid);
+        allow create: if signedIn() && me() in chatUsers(cid)
+          && request.resource.data.from == me()
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1000;
+        allow update, delete: if false;
+      }
+    }
+
     // sha256(phone) -> country code; lets sign-in work even if the wrong country
     // is selected. Readable before login, create-only, holds no phone number.
     match /phones/{h} {
