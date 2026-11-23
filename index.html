@@ -3,212 +3,285 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="description" content="1v1 Duel — O'zbekiston maktab o'quvchilari uchun bilim musobaqasi (viktorina)">
-<meta name="theme-color" content="#140d3a">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231a2a6b'/%3E%3Cpath d='M37 12 L23 35 L31 35 L27 54 L43 27 L35 27 Z' fill='%23fff'/%3E%3C/svg%3E">
-<title>1v1 Duel — Viktorina</title>
+<meta name="description" content="DUELUM — O'zbekiston maktab o'quvchilari uchun bilim musobaqasi">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%236c4bf4'/%3E%3Cpath d='M37 12 L23 35 L31 35 L27 54 L43 27 L35 27 Z' fill='%23fff'/%3E%3C/svg%3E">
+<title>DUELUM — Bilimlar dueli</title>
+<script>
+  // apply the saved theme before first paint (no white flash in dark mode)
+  (function(){ try{ var t=localStorage.getItem('duel_theme') || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'); document.documentElement.dataset.theme=t; }catch(e){} })();
+</script>
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <div id="app">
 
-<!-- BOOT (online mode: shown while Firebase restores the login) -->
-<div class="screen" id="boot"><div class="onb">
+<!-- BOOT -->
+<div class="screen center-screen" id="boot">
+  <div class="brandmark big"><i data-icon="swords" data-size="30"></i></div>
   <div class="spinner"></div>
-  <div id="bootMsg" style="color:#cfc8ff;font-size:14px">...</div>
-  <button class="wide primary" id="bootRetry" style="display:none" onclick="boot()">↻ <span data-i18n="retry">Qayta urinish</span></button>
-</div></div>
+  <div id="bootMsg" class="muted">...</div>
+  <button class="btn primary" id="bootRetry" style="display:none" onclick="boot()" data-i18n="retry">Qayta urinish</button>
+</div>
 
 <!-- LANGUAGE -->
-<div class="screen" id="lang"><div class="onb">
-  <div class="logo2"><svg viewBox="0 0 64 64" width="32" height="32"><path d="M14 18 L30 14 L30 48 L14 52 Z" fill="none" stroke="#fff" stroke-width="3"/><path d="M50 18 L34 14 L34 48 L50 52 Z" fill="none" stroke="#fff" stroke-width="3"/><path d="M37 12 L23 35 L31 35 L27 54 L43 27 L35 27 Z" fill="#fff"/></svg></div>
-  <h2>Tilni tanlang / Choose language / Выберите язык</h2>
-  <button class="langbtn" onclick="selectLang('uz')">🇺🇿 O'zbekcha</button>
-  <button class="langbtn" onclick="selectLang('ru')">🇷🇺 Русский</button>
-  <button class="langbtn" onclick="selectLang('en')">🇬🇧 English</button>
-</div></div>
+<div class="screen center-screen" id="lang">
+  <div class="brandmark big"><i data-icon="swords" data-size="30"></i></div>
+  <h1 class="wordmark">DUELUM</h1>
+  <p class="muted">Tilni tanlang · Choose language · Выберите язык</p>
+  <div class="stack">
+    <button class="btn outline" onclick="selectLang('uz')"><span class="lang-code">UZ</span> O'zbekcha</button>
+    <button class="btn outline" onclick="selectLang('ru')"><span class="lang-code">RU</span> Русский</button>
+    <button class="btn outline" onclick="selectLang('en')"><span class="lang-code">EN</span> English</button>
+  </div>
+</div>
 
 <!-- AUTH CHOICE -->
-<div class="screen" id="authChoice"><div class="onb">
-  <div class="logo2"><svg viewBox="0 0 64 64" width="32" height="32"><path d="M14 18 L30 14 L30 48 L14 52 Z" fill="none" stroke="#fff" stroke-width="3"/><path d="M50 18 L34 14 L34 48 L50 52 Z" fill="none" stroke="#fff" stroke-width="3"/><path d="M37 12 L23 35 L31 35 L27 54 L43 27 L35 27 Z" fill="#fff"/></svg></div>
-  <h2 data-i18n="appName">1v1 DUEL</h2>
-  <button class="wide primary" data-i18n="registerBtn" onclick="openAuth('register')">Ro'yxatdan o'tish</button>
-  <button class="wide ghost" data-i18n="haveAccBtn" onclick="openAuth('login')">Akkaunt mavjud</button>
-</div></div>
+<div class="screen center-screen" id="authChoice">
+  <div class="brandmark big"><i data-icon="swords" data-size="30"></i></div>
+  <h1 class="wordmark">DUELUM</h1>
+  <p class="muted" data-i18n="subjSub">Bilimingizni sinang va raqiblar bilan bellashing</p>
+  <div class="stack">
+    <button class="btn primary" data-i18n="registerBtn" onclick="openAuth('register')">Ro'yxatdan o'tish</button>
+    <button class="btn outline" data-i18n="haveAccBtn" onclick="openAuth('login')">Akkaunt mavjud</button>
+  </div>
+</div>
 
-<!-- AUTH FORM -->
-<div class="screen" id="authForm"><div class="onb">
-  <h2 id="authTitle">Ro'yxatdan o'tish</h2>
-  <input class="field" id="f_name" data-i18n-ph="name" placeholder="Ism">
-  <input class="field" id="f_surname" data-i18n-ph="surname" placeholder="Familiya">
-  <div class="phoneRow">
-    <button type="button" id="dialBtn" onclick="openCountryPicker()">🇺🇿 +998</button>
-    <input class="field" id="f_phone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="O'zbekiston" oninput="onPhoneInput(this)">
+<!-- AUTH FORM (a real <form> so browsers offer to save the password) -->
+<div class="screen center-screen" id="authForm">
+  <h2 id="authTitle" class="title-lg">Ro'yxatdan o'tish</h2>
+  <form class="stack" id="authFormEl" autocomplete="on" onsubmit="event.preventDefault();submitAuth()">
+    <input class="field" id="f_name" name="given-name" autocomplete="given-name" data-i18n-ph="name" placeholder="Ism" maxlength="30">
+    <input class="field" id="f_surname" name="family-name" autocomplete="family-name" data-i18n-ph="surname" placeholder="Familiya" maxlength="30">
+    <div class="phoneRow">
+      <button type="button" id="dialBtn" class="field dial" onclick="openCountryPicker()">UZ +998</button>
+      <input class="field" id="f_phone" name="username" type="tel" inputmode="tel" autocomplete="username" placeholder="O'zbekiston" oninput="onPhoneInput(this)">
+    </div>
+    <div class="hint" id="phonePreview"></div>
+    <div class="pwRow">
+      <input class="field" id="f_pass" name="password" type="password" autocomplete="current-password" data-i18n-ph="pass" placeholder="Parol">
+      <button type="button" class="eyeBtn" onclick="togglePw('f_pass',this)"><i data-icon="eye" data-size="20"></i></button>
+    </div>
+    <div class="pwRow" id="pass2Row">
+      <input class="field" id="f_pass2" name="password2" type="password" autocomplete="new-password" data-i18n-ph="pass2" placeholder="Parolni tasdiqlang">
+      <button type="button" class="eyeBtn" onclick="togglePw('f_pass2',this)"><i data-icon="eye" data-size="20"></i></button>
+    </div>
+    <div class="err" id="authErr"></div>
+    <button class="btn primary" type="submit" id="authSubmit" data-i18n="createAcc">Akkaunt yaratish</button>
+    <button class="btn ghost" type="button" data-i18n="back" onclick="go('authChoice')">Orqaga</button>
+  </form>
+</div>
+
+<!-- TELEGRAM CONFIRMATION (sign-up step 2: mandatory channel subscription) -->
+<div class="screen center-screen" id="tgVerify">
+  <div class="brandmark big tg"><i data-icon="send" data-size="28"></i></div>
+  <h2 class="title-lg" data-i18n="tgTitle">Telegram orqali tasdiqlang</h2>
+  <p class="muted" id="tgText" data-i18n="tgText">Ro'yxatdan o'tish uchun Telegram kanalimizga obuna bo'ling va Telegram orqali tasdiqlang.</p>
+  <div class="stack">
+    <a class="btn outline" id="tgChannelBtn" target="_blank" rel="noopener"><i data-icon="megaphone" data-size="18"></i> <span data-i18n="tgSubscribe">Kanalga obuna bo'lish</span></a>
+    <div id="tgWidget" class="tgwidget"></div>
+    <div class="err" id="tgErr"></div>
+    <button class="btn ghost" type="button" data-i18n="back" onclick="go('authForm')">Orqaga</button>
   </div>
-  <div class="pwRow">
-    <input class="field" id="f_pass" type="password" autocomplete="current-password" data-i18n-ph="pass" placeholder="Parol">
-    <button type="button" class="eyeBtn" onclick="togglePw('f_pass',this)">👁</button>
-  </div>
-  <div class="pwRow">
-    <input class="field" id="f_pass2" type="password" autocomplete="new-password" data-i18n-ph="pass2" placeholder="Parolni tasdiqlang">
-    <button type="button" class="eyeBtn" onclick="togglePw('f_pass2',this)">👁</button>
-  </div>
-  <div class="err" id="authErr"></div>
-  <button class="wide primary" id="authSubmit" data-i18n="createAcc" onclick="submitAuth()">Akkaunt yaratish</button>
-  <button class="linkbtn" data-i18n="back" onclick="go('authChoice')">Orqaga</button>
-</div></div>
+</div>
 
 <!-- HOME -->
 <div class="screen" id="home">
-  <div class="topbar">
-    <button class="iconbtn" onclick="toggleMenu(true)">☰</button>
-    <div class="brand">
-      <div class="logo"><svg viewBox="0 0 64 64" width="22" height="22"><path d="M14 18 L30 14 L30 48 L14 52 Z" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"/><path d="M50 18 L34 14 L34 48 L50 52 Z" fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round"/><path d="M37 12 L23 35 L31 35 L27 54 L43 27 L35 27 Z" fill="#fff"/></svg></div>
-      <div><b data-i18n="appName">1v1 DUEL</b><small data-i18n="tagline">VIKTORINA</small></div>
+  <header class="appbar">
+    <div class="brand"><div class="brandmark"><i data-icon="swords" data-size="18"></i></div><b class="wordmark sm">DUELUM</b></div>
+    <div class="actions">
+      <button class="iconbtn" onclick="toggleTheme()" aria-label="theme"><span class="themeIcon"></span></button>
+      <button class="iconbtn" onclick="openBell()" aria-label="notifications"><i data-icon="bell"></i><span class="dotbadge" id="bellDot"></span></button>
+      <button class="iconbtn" onclick="toggleMenu(true)" aria-label="menu"><i data-icon="menu"></i></button>
     </div>
-    <button class="iconbtn" onclick="go('rating')">🏆</button>
-  </div>
-  <div class="homehead">
+  </header>
+  <div class="pagehead">
     <h1 data-i18n="chooseSubject">Fanni tanlang</h1>
-    <p data-i18n="subjSub">Istalgan fanni tanlang va raqib bilan duel qiling!</p>
+    <p class="muted" data-i18n="subjSub">Istalgan fanni tanlang va raqib bilan bellashing</p>
+  </div>
+  <div class="banner" id="tgBanner" style="display:none" onclick="openBell()">
+    <i data-icon="send" data-size="18"></i><span data-i18n="tgBanner">Telegram kanalimizga obuna bo'ling</span><i data-icon="chevron" data-size="18"></i>
   </div>
   <div class="grid" id="grid"></div>
 </div>
 
 <!-- SUBJECT INTRO -->
-<div class="screen" id="subjIntro"><div class="wrap">
-  <div class="bigic" id="introIc"></div>
-  <h2 id="introName"></h2>
-  <p id="introOnline"></p>
-  <div class="btnrow">
-    <button class="wide ghost" data-i18n="cancel" onclick="go('home')">Bekor qilish</button>
-    <button class="wide primary" data-i18n="start" onclick="startFromIntro()">Boshlash</button>
+<div class="screen center-screen" id="subjIntro">
+  <div class="subjbig" id="introIc"></div>
+  <h2 class="title-lg" id="introName"></h2>
+  <p class="muted" id="introOnline"></p>
+  <div class="row2">
+    <button class="btn outline" data-i18n="cancel" onclick="go('home')">Bekor qilish</button>
+    <button class="btn primary" data-i18n="start" onclick="startFromIntro()">Boshlash</button>
   </div>
-</div></div>
+</div>
+
+<!-- SEARCHING / WAITING -->
+<div class="screen center-screen" id="searching">
+  <div class="spinner"></div>
+  <h2 class="title-lg" id="searchTitle">Raqib qidirilmoqda...</h2>
+  <div id="searchTimer" class="countdown">15</div>
+  <button class="btn outline" data-i18n="cancel" onclick="cancelSearch()">Bekor qilish</button>
+</div>
 
 <!-- DUEL -->
 <div class="screen" id="duel">
   <div class="vsrow">
-    <div class="chip me"><div class="av" id="meAv">🧑</div><div><div class="nm" data-i18n="you">Siz</div><div class="sc" id="meScore">0</div></div></div>
+    <div class="chip me"><div class="av" id="meAv"></div><div><div class="nm" data-i18n="you">Siz</div><div class="sc" id="meScore">0</div></div></div>
     <div class="vs">VS</div>
-    <div class="chip ai"><div class="av" id="oppAv">🤖</div><div><div class="nm" id="oppName">Raqib (AI)</div><div class="sc" id="aiScore">0</div></div></div>
+    <div class="chip opp"><div><div class="nm" id="oppName">Raqib</div><div class="sc" id="aiScore">0</div></div><div class="av" id="oppAv"></div></div>
   </div>
-  <div class="bar"><i id="barMe" style="background:#3b63d6;width:50%"></i><i id="barAi" style="background:#d6473b;width:50%"></i></div>
-  <div class="timerwrap">
-    <div class="ring" id="ring" style="--p:100">
-      <div class="inner"><b id="timeLeft">15</b><span data-i18n="seconds">soniya</span></div>
-    </div>
-  </div>
-  <div class="tag" id="subjTag">📐 Matematika</div>
+  <div class="bar"><i id="barMe" style="width:50%"></i><i id="barAi" style="width:50%"></i></div>
+  <div class="timerwrap"><div class="ring" id="ring" style="--p:100"><div class="inner"><b id="timeLeft">15</b></div></div></div>
+  <div class="tag" id="subjTag"></div>
   <div class="stickerRow" id="stickerRow"></div>
   <div class="qcard" id="qText">...</div>
   <div class="opts" id="opts"></div>
   <div class="duelfoot">
-    <button onclick="skipQ()">🚩 <span data-i18n="skip">Savolni o'tkazish</span></button>
-    <button id="fiftyBtn" onclick="useFifty()">🎯 <span data-i18n="fifty">50:50</span></button>
-    <button id="hintBtn" onclick="useHint()" style="display:none">💡 <span id="hintCount">2</span></button>
-    <button onclick="leaveGame()">🚪 <span data-i18n="leaveGame">Chiqib ketish</span></button>
+    <button onclick="skipQ()"><i data-icon="flag" data-size="18"></i><span data-i18n="skip">O'tkazish</span></button>
+    <button id="fiftyBtn" onclick="useFifty()"><i data-icon="half" data-size="18"></i><span>50:50</span></button>
+    <button id="hintBtn" onclick="useHint()" style="display:none"><i data-icon="bulb" data-size="18"></i><span id="hintCount">2</span></button>
+    <button onclick="leaveGame()"><i data-icon="logout" data-size="18"></i><span data-i18n="leaveGame">Chiqish</span></button>
   </div>
 </div>
 
-<!-- SEARCHING / MATCHMAKING -->
-<div class="screen" id="searching"><div class="wrap">
-  <div class="spinner"></div>
-  <h2 id="searchTitle">Raqib qidirilmoqda...</h2>
-  <div id="searchTimer" style="font-size:30px;font-weight:800;">15</div>
-  <button class="wide ghost" data-i18n="cancel" onclick="cancelSearch()">Bekor qilish</button>
-</div></div>
-
 <!-- RATING -->
 <div class="screen" id="rating">
-  <div class="rathead"><button class="iconbtn" onclick="go('home')">←</button><h2 data-i18n="ratingTitle">🏆 Reyting</h2><button class="iconbtn" onclick="alert(t('ratingInfo'))">ⓘ</button></div>
+  <header class="appbar">
+    <button class="iconbtn" onclick="go('home')"><i data-icon="back"></i></button>
+    <b class="appbar-title" data-i18n="ratingTitle">Reyting</b>
+    <button class="iconbtn" onclick="alert(t('ratingInfo'))"><i data-icon="info"></i></button>
+  </header>
   <div class="tabs">
     <button class="on" id="tabA" data-i18n="monthlyTab" onclick="showTab('A')">Oylik</button>
     <button id="tabC" data-i18n="allTimeTab" onclick="showTab('C')">Umumiy</button>
     <button id="tabB" data-i18n="leaguesTab" onclick="showTab('B')">Ligalar</button>
   </div>
   <div class="tabpane on" id="paneA">
-    <div class="mecard">
-      <div class="av" id="ratAv">🧑</div>
+    <div class="card mecard">
+      <div class="av lg" id="ratAv"></div>
       <h3 id="ratName">—</h3>
-      <div class="idtag" id="ratId">ID: —</div>
+      <div class="muted small" id="ratId">ID: —</div>
       <div class="statrow">
-        <div class="stat"><b id="ratMonth">0</b><span data-i18n="monthScoreLbl">Oylik ball</span></div>
+        <div class="stat"><b id="ratMonth">0</b><span data-i18n="monthScoreLbl">Oylik</span></div>
         <div class="stat"><b id="ratScore">0</b><span data-i18n="score">Ball</span></div>
         <div class="stat"><b id="ratLeague">—</b><span data-i18n="league">Liga</span></div>
         <div class="stat"><b id="ratRank">#1</b><span data-i18n="rank">O'rin</span></div>
       </div>
     </div>
-    <div class="lblist" id="listA"></div>
-    <div class="note" id="noteA"></div>
+    <div class="lblist" id="listA"></div><div class="note" id="noteA"></div>
   </div>
-  <div class="tabpane" id="paneC">
-    <div class="lblist" id="listC"></div>
-    <div class="note" id="noteC"></div>
-  </div>
+  <div class="tabpane" id="paneC"><div class="lblist" id="listC"></div><div class="note" id="noteC"></div></div>
   <div class="tabpane" id="paneB">
-    <div class="mecard">
-      <div class="av" id="ratAv2">🧑</div>
+    <div class="card mecard">
+      <div class="leaguebadge" id="ratLeagueBadge"></div>
       <h3 id="ratLeague2">—</h3>
-      <div class="idtag" id="ratLeagueDesc">—</div>
+      <div class="muted small" id="ratLeagueDesc">—</div>
+      <div class="progress"><i id="leagueProg" style="width:0%"></i></div>
     </div>
-    <div class="lblist" id="listB"></div>
-    <div class="note" id="noteB"></div>
+    <div class="lblist" id="listB"></div><div class="note" id="noteB"></div>
   </div>
 </div>
 
-<!-- FRIENDS -->
+<!-- FRIENDS / SEARCH -->
 <div class="screen" id="friends">
-  <div class="rathead"><button class="iconbtn" onclick="go('home')">←</button><h2 data-i18n="navFriends">Do'stlar</h2><span style="width:38px;display:inline-block"></span></div>
-  <div class="pflist">
-    <div id="friendsCloud"></div>
-    <div class="pfrow" onclick="inviteFriends()"><div class="l">➕ <span data-i18n="inviteFriends">Do'stlarni taklif qilish</span></div>›</div>
-    <div class="pfrow" onclick="go('teamBattle')"><div class="l">⚔️ <span data-i18n="teamBattle">4 vs 4 Jamoaviy jang</span></div>›</div>
+  <header class="appbar">
+    <button class="iconbtn" onclick="go('home')"><i data-icon="back"></i></button>
+    <b class="appbar-title" data-i18n="navFriends">Do'stlar</b>
+    <button class="iconbtn" onclick="inviteFriends()"><i data-icon="share"></i></button>
+  </header>
+  <div class="searchbox">
+    <i data-icon="search" data-size="18"></i>
+    <input id="searchInput" data-i18n-ph="searchPh" placeholder="ID yoki ism bo'yicha qidirish" autocomplete="off" oninput="onSearchInput(this.value)">
   </div>
-  <div class="note" id="noFriendsNote" style="padding:0 18px" data-i18n="noFriends">Hali do'stlaringiz yo'q</div>
+  <div id="searchResults"></div>
+  <div id="friendsCloud"></div>
+  <div class="list">
+    <div class="listrow" onclick="go('teamBattle')"><i data-icon="users"></i><span data-i18n="teamBattle">4 vs 4 jamoaviy jang</span><i data-icon="chevron" data-size="18"></i></div>
+  </div>
+  <div class="note" id="noFriendsNote" data-i18n="noFriends"></div>
 </div>
 
-<!-- TEAM BATTLE 4v4 (dynamic hub: mode select -> room create/join -> lobby -> play) -->
+<!-- OTHER PLAYER'S PROFILE -->
+<div class="screen" id="userProfile">
+  <header class="appbar">
+    <button class="iconbtn" onclick="upBack()"><i data-icon="back"></i></button>
+    <b class="appbar-title" id="upTitle"></b>
+    <span class="iconbtn ghostspace"></span>
+  </header>
+  <div id="upContent"></div>
+</div>
+
+<!-- TEAM BATTLE 4v4 -->
 <div class="screen" id="teamBattle">
-  <div class="rathead"><button class="iconbtn" id="teamBackBtn" onclick="teamBack()">←</button><h2 data-i18n="teamBattle">4 vs 4</h2><span style="width:38px;display:inline-block"></span></div>
-  <div id="teamContent" style="padding:0 18px 20px;color:#fff"></div>
+  <header class="appbar">
+    <button class="iconbtn" onclick="teamBack()"><i data-icon="back"></i></button>
+    <b class="appbar-title" data-i18n="teamBattle">4 vs 4</b>
+    <span class="iconbtn ghostspace"></span>
+  </header>
+  <div id="teamContent" class="pad"></div>
 </div>
 
-<!-- PROFILE -->
+<!-- MY PROFILE -->
 <div class="screen" id="profile">
+  <header class="appbar">
+    <b class="appbar-title left" id="pfHandle">—</b>
+    <div class="actions">
+      <button class="iconbtn" onclick="toggleTheme()"><span class="themeIcon"></span></button>
+      <button class="iconbtn" onclick="toggleMenu(true)"><i data-icon="menu"></i></button>
+    </div>
+  </header>
   <div class="pfhead">
     <div class="pfav" onclick="document.getElementById('avatarInput').click()">
-      <span id="pfAvEmoji">🧑</span><img id="pfAvImg" style="display:none">
-      <div class="edit">✏️</div>
+      <div class="av xl" id="pfAv"></div>
+      <div class="edit"><i data-icon="camera" data-size="14"></i></div>
     </div>
-    <input type="file" id="avatarInput" accept="image/*" style="display:none">
-    <div class="pfname" id="pfName">—</div>
-    <div class="pfid" id="pfId" data-i18n="yourId">ID: —</div>
+    <div class="pfstats">
+      <div><b id="pfScore">0</b><span data-i18n="score">Ball</span></div>
+      <div><b id="pfFollowers">0</b><span data-i18n="followers">Obunachilar</span></div>
+      <div><b id="pfFollowing">0</b><span data-i18n="followingLbl">Obunalar</span></div>
+    </div>
   </div>
-  <div class="pflist">
-    <div class="pfrow" onclick="toggleMenu(true)"><div class="l">⚙️ <span data-i18n="settings">Sozlamalar</span></div>›</div>
-    <div class="pfrow" onclick="go('premium')"><div class="l">💎 <span data-i18n="premiumTitle">Premium</span></div>›</div>
-    <div class="pfrow" onclick="window.open('https://t.me/U7BBEK','_blank','noopener')"><div class="l">💬 <span data-i18n="menuSupport">Qo'llab-quvvatlash</span></div>›</div>
-    <div class="pfrow" onclick="logout()"><div class="l">🚪 <span data-i18n="menuLogout">Chiqish</span></div>›</div>
+  <input type="file" id="avatarInput" accept="image/*" style="display:none">
+  <div class="pfinfo">
+    <div class="pfname" id="pfName">—</div>
+    <div class="muted small" id="pfId">ID: —</div>
+    <div class="pfbadges" id="pfBadges"></div>
+  </div>
+  <div class="list">
+    <div class="listrow" onclick="toggleMenu(true)"><i data-icon="settings"></i><span data-i18n="settings">Sozlamalar</span><i data-icon="chevron" data-size="18"></i></div>
+    <div class="listrow" onclick="go('premium')"><i data-icon="crown"></i><span data-i18n="premiumTitle">Premium</span><i data-icon="chevron" data-size="18"></i></div>
+    <a class="listrow" target="_blank" rel="noopener" data-link="support"><i data-icon="chat"></i><span data-i18n="menuSupport">Qo'llab-quvvatlash</span><i data-icon="chevron" data-size="18"></i></a>
+    <div class="listrow danger" onclick="logout()"><i data-icon="logout"></i><span data-i18n="menuLogout">Chiqish</span></div>
   </div>
 </div>
 
 <!-- PREMIUM -->
 <div class="screen" id="premium">
-  <div class="rathead"><button class="iconbtn" onclick="go('home')">←</button><h2 data-i18n="premiumTitle">💎 Premium</h2><span style="width:38px;display:inline-block"></span></div>
-  <div style="padding:0 18px 8px;color:#9a93c9;font-size:13px" data-i18n="premiumDesc"></div>
-  <div style="padding:0 18px 14px;color:#fff;font-size:13px;display:flex;flex-direction:column;gap:7px">
-    <div>✅ <span data-i18n="premiumPerk1"></span></div>
-    <div>✅ <span data-i18n="premiumPerk2"></span></div>
-    <div>✅ <span data-i18n="premiumPerk3"></span></div>
-    <div>✅ <span data-i18n="premiumPerk4"></span></div>
+  <header class="appbar">
+    <button class="iconbtn" onclick="go('home')"><i data-icon="back"></i></button>
+    <b class="appbar-title" data-i18n="premiumTitle">Premium</b>
+    <span class="iconbtn ghostspace"></span>
+  </header>
+  <div class="pad">
+    <p class="muted" data-i18n="premiumDesc"></p>
+    <ul class="perks">
+      <li><i data-icon="check" data-size="18"></i><span data-i18n="premiumPerk1"></span></li>
+      <li><i data-icon="check" data-size="18"></i><span data-i18n="premiumPerk2"></span></li>
+      <li><i data-icon="check" data-size="18"></i><span data-i18n="premiumPerk3"></span></li>
+      <li><i data-icon="check" data-size="18"></i><span data-i18n="premiumPerk4"></span></li>
+    </ul>
+    <div id="planList"></div>
   </div>
-  <div id="planList" style="padding:0 18px 20px"></div>
 </div>
 
 <!-- CALCULATOR -->
 <div class="screen" id="calculator">
-  <div class="rathead"><button class="iconbtn" onclick="go('home')">←</button><h2 data-i18n="calcTitle">Kalkulyator</h2><span style="width:38px;display:inline-block"></span></div>
+  <header class="appbar">
+    <button class="iconbtn" onclick="go('home')"><i data-icon="back"></i></button>
+    <b class="appbar-title" data-i18n="calcTitle">Kalkulyator</b>
+    <span class="iconbtn ghostspace"></span>
+  </header>
   <div class="calcWrap">
     <div class="calcDisplay" id="calcDisplay">0</div>
     <div class="calcGrid">
@@ -235,88 +308,70 @@
   </div>
 </div>
 
-<!-- AI ASSISTANT -->
-<div class="screen" id="aiAssistant">
-  <div class="rathead"><button class="iconbtn" onclick="go('home')">←</button><h2 data-i18n="aiTitle">🤖 AI Yordamchi</h2><span style="width:38px;display:inline-block"></span></div>
-  <div id="aiMessages" class="aiMessages"></div>
-  <div id="aiInputRow" class="aiInputRow">
-    <input class="field" style="max-width:none;margin-top:0" id="aiInput" maxlength="2000" autocomplete="off" data-i18n-ph="aiPlaceholder" placeholder="Savolingizni yozing..." onkeydown="if(event.key==='Enter')sendAI()">
-    <button onclick="sendAI()" data-i18n="aiSend">Yuborish</button>
-  </div>
-</div>
-
-<!-- PAYMENT (demo only — no real processing) -->
-<div class="screen" id="payment">
-  <div class="rathead"><button class="iconbtn" onclick="go('premium')">←</button><h2 data-i18n="payConfirm">To'lash</h2><span style="width:38px;display:inline-block"></span></div>
-  <div class="onb" style="min-height:auto;padding-top:14px">
-    <div id="payPriceLbl" style="font-size:26px;font-weight:800;color:#ffd24a"></div>
-    <input class="field" id="cc_num" maxlength="19" inputmode="numeric" autocomplete="off" data-i18n-ph="cardNumber" placeholder="Karta raqami" oninput="onCardInput(this)">
-    <input class="field" id="cc_exp" maxlength="5" inputmode="numeric" autocomplete="off" data-i18n-ph="cardExpiry" placeholder="OO/YY" oninput="onExpInput(this)">
-    <div class="err" id="payErr"></div>
-    <button class="wide primary" id="payBtn" onclick="submitPayment()">To'lash</button>
-    <div style="font-size:11px;color:#6f68a0;margin-top:10px;max-width:280px" data-i18n="payNote"></div>
-  </div>
-</div>
-
 <nav class="bn" id="bottomNav">
-  <button class="on" data-s="home" onclick="go('home')"><span class="ic">🏠</span><span data-i18n="navHome">Bosh sahifa</span></button>
-  <button data-s="duel" onclick="startSearch('logic')"><span class="ic">⚔️</span><span data-i18n="navDuel">Duel</span></button>
-  <button data-s="rating" onclick="go('rating')"><span class="ic">🏆</span><span data-i18n="navRating">Reyting</span></button>
-  <button data-s="friends" onclick="go('friends')"><span class="ic">👥<i class="nbadge" id="friendsBadge" style="display:none">0</i></span><span data-i18n="navFriends">Do'stlar</span></button>
-  <button data-s="profile" onclick="go('profile')"><span class="ic">👤</span><span data-i18n="navProfile">Profil</span></button>
+  <button class="on" data-s="home" onclick="go('home')"><i data-icon="home" data-size="24"></i><span data-i18n="navHome">Asosiy</span></button>
+  <button data-s="duel" onclick="startSearch('logic')"><i data-icon="swords" data-size="24"></i><span data-i18n="navDuel">Duel</span></button>
+  <button data-s="rating" onclick="go('rating')"><i data-icon="trophy" data-size="24"></i><span data-i18n="navRating">Reyting</span></button>
+  <button data-s="friends" onclick="go('friends')"><span class="navic"><i data-icon="users" data-size="24"></i><i class="nbadge" id="friendsBadge" style="display:none">0</i></span><span data-i18n="navFriends">Do'stlar</span></button>
+  <button data-s="profile" onclick="go('profile')"><i data-icon="user" data-size="24"></i><span data-i18n="navProfile">Profil</span></button>
 </nav>
 </div>
 
-<!-- MENU OVERLAY -->
+<!-- SIDE MENU -->
 <div id="menuOverlay" onclick="if(event.target===this)toggleMenu(false)">
   <div id="menuPanel">
-    <div class="mrow" onclick="toggleSub('langSub')">🌐 <span data-i18n="menuLang">Tilni o'zgartirish</span></div>
+    <div class="menuhead"><div class="brandmark"><i data-icon="swords" data-size="18"></i></div><b class="wordmark sm">DUELUM</b></div>
+    <div class="mrow" onclick="toggleSub('langSub')"><i data-icon="globe"></i><span data-i18n="menuLang">Til</span></div>
     <div class="msub" id="langSub">
-      <button onclick="selectLang('uz');toggleSub('langSub')">🇺🇿 O'zbekcha</button>
-      <button onclick="selectLang('ru');toggleSub('langSub')">🇷🇺 Русский</button>
-      <button onclick="selectLang('en');toggleSub('langSub')">🇬🇧 English</button>
+      <button onclick="selectLang('uz');toggleSub('langSub')">O'zbekcha</button>
+      <button onclick="selectLang('ru');toggleSub('langSub')">Русский</button>
+      <button onclick="selectLang('en');toggleSub('langSub')">English</button>
     </div>
-    <div class="mrow" onclick="toggleSub('passSub')">🔑 <span data-i18n="menuPass">Parolni o'zgartirish</span></div>
+    <div class="mrow" onclick="toggleTheme()"><span class="themeIcon"></span><span data-i18n="themeLbl">Kunduzgi / tungi rejim</span></div>
+    <div class="mrow" onclick="toggleSub('passSub')"><i data-icon="lock"></i><span data-i18n="menuPass">Parolni o'zgartirish</span></div>
     <div class="msub" id="passSub">
-      <input class="field" style="max-width:none" id="newPassInput" type="password" data-i18n-ph="newPass" placeholder="Yangi parol">
+      <input class="field" id="newPassInput" type="password" autocomplete="new-password" data-i18n-ph="newPass" placeholder="Yangi parol">
       <button onclick="savePassword()" class="on2" data-i18n="save">Saqlash</button>
     </div>
-    <div class="mrow" onclick="toggleMenu(false);go('calculator')">🧮 <span data-i18n="calcMenu">Kalkulyator</span></div>
-    <div class="mrow" onclick="toggleMenu(false);go('aiAssistant')">🤖 <span data-i18n="aiMenu">AI Yordamchi</span></div>
-    <div class="mrow" onclick="toggleMenu(false);go('premium')">💎 <span data-i18n="menuPremium">Premium</span></div>
-    <!-- ===== EXTERNAL LINKS — edit these 4 URLs (placeholders) ===== -->
-    <a class="mrow" href="https://t.me/duelum" target="_blank" rel="noopener">📢 <span data-i18n="tgChannel">Telegram kanal</span></a>
-    <a class="mrow" href="https://t.me/duelum_bot" target="_blank" rel="noopener">🤖 <span data-i18n="tgBot">Telegram bot</span></a>
-    <a class="mrow" href="https://youtube.com/shoooxe" target="_blank" rel="noopener">▶️ <span data-i18n="ytChannel">YouTube</span></a>
-    <a class="mrow" href="https://t.me/U7BBEK" target="_blank" rel="noopener">💬 <span data-i18n="menuSupport">Qo'llab-quvvatlash</span></a>
-    <!-- ===== end of external links ===== -->
-    <div class="mrow" onclick="toggleMenu(false);logout()">🚪 <span data-i18n="menuLogout">Chiqish</span></div>
+    <div class="mrow" onclick="toggleMenu(false);go('calculator')"><i data-icon="calc"></i><span data-i18n="calcTitle">Kalkulyator</span></div>
+    <div class="mrow" onclick="toggleMenu(false);go('premium')"><i data-icon="crown"></i><span data-i18n="premiumTitle">Premium</span></div>
+    <div class="mdiv"></div>
+    <a class="mrow" data-link="channel" target="_blank" rel="noopener"><i data-icon="megaphone"></i><span data-i18n="tgChannel">Telegram kanal</span></a>
+    <a class="mrow" data-link="bot" target="_blank" rel="noopener"><i data-icon="bot"></i><span data-i18n="tgBot">Telegram bot</span></a>
+    <a class="mrow" data-link="youtube" target="_blank" rel="noopener"><i data-icon="play"></i><span>YouTube</span></a>
+    <a class="mrow" data-link="support" target="_blank" rel="noopener"><i data-icon="chat"></i><span data-i18n="menuSupport">Qo'llab-quvvatlash</span></a>
+    <div class="mdiv"></div>
+    <div class="mrow danger" onclick="toggleMenu(false);logout()"><i data-icon="logout"></i><span data-i18n="menuLogout">Chiqish</span></div>
+  </div>
+</div>
+
+<!-- NOTIFICATIONS (bell) -->
+<div id="bellOverlay" onclick="if(event.target===this)closeBell()">
+  <div id="bellPanel">
+    <div class="sheethead"><b data-i18n="notifications">Bildirishnomalar</b><button class="iconbtn" onclick="closeBell()"><i data-icon="x"></i></button></div>
+    <div id="bellList"></div>
   </div>
 </div>
 
 <!-- COUNTRY CODE PICKER -->
 <div id="countryOverlay" onclick="if(event.target===this)closeCountryPicker()">
   <div id="countryPanel">
-    <input class="field" style="max-width:none;margin-top:0" id="countrySearch" data-i18n-ph="searchCountry" placeholder="Davlat yoki kod qidiring..." oninput="renderCountryList(this.value)">
+    <input class="field" id="countrySearch" data-i18n-ph="searchCountry" placeholder="Davlat yoki kod..." oninput="renderCountryList(this.value)">
     <div id="countryList"></div>
   </div>
 </div>
 
-<!-- RESULT OVERLAY (end of 1v1/logic/team match) -->
-<div id="resultOverlay"><div class="resultCard" id="resultCard"></div></div>
-
-<!-- GENERIC MODAL (friend duel invites etc.) -->
-<div id="modalOverlay"><div class="resultCard" id="modalCard"></div></div>
-
-<!-- SMALL TOAST MESSAGE -->
+<div id="resultOverlay"><div class="sheet" id="resultCard"></div></div>
+<div id="modalOverlay"><div class="sheet" id="modalCard"></div></div>
 <div id="toast"></div>
-
-<!-- STICKER TOAST (big emoji shown briefly over the screen) -->
 <div id="stickerToast"></div>
 
 <script src="js/firebase-config.js"></script>
+<script src="js/telegram-config.js"></script>
+<script src="js/icons.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/data.js"></script>
+<script src="js/questions.js"></script>
 <script src="js/cloud.js"></script>
 <script src="js/storage.js"></script>
 <script src="js/app.js"></script>

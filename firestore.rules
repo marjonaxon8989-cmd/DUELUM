@@ -9,6 +9,7 @@ rules_version = '2';
 //  - Score can only move by a plausible amount per write (−60…+60), never below 0.
 //    (A determined cheater could still fake answers from the browser — fully
 //     cheat-proof scoring needs Cloud Functions, which require the paid Blaze plan.)
+//  - Follower counts can only change by +1/-1 together with a real follow document.
 //  - Friend requests: only you can send yours; only the OTHER person can accept.
 //  - Duel challenges: only between accepted friends, readable only by the two players.
 service cloud.firestore {
@@ -23,16 +24,21 @@ service cloud.firestore {
         && d.score is int && d.score >= 0
         && d.monthScore is int && d.monthScore >= 0
         && d.monthKey is string && d.monthKey.size() == 7
-        && (d.avatar == null || (d.avatar is string && d.avatar.size() < 100000));
+        && (d.avatar == null || (d.avatar is string && d.avatar.size() < 100000))
+        && (!('tgUsername' in d) || (d.tgUsername is string && d.tgUsername.size() <= 40));
     }
+    function followDoc(from, to) { return /databases/$(database)/documents/follows/$(from + '_' + to); }
 
     match /users/{uid} {
       allow read: if signedIn();
       allow create: if signedIn() && me() == uid && validUser(request.resource.data)
         && request.resource.data.score == 0 && request.resource.data.monthScore == 0
+        && request.resource.data.get('followers', 0) == 0
         && get(/databases/$(database)/documents/ids/$(request.resource.data.publicId)).data.uid == me();
+      // the owner: profile fields and score (plausible change per write); never their own follower count
       allow update: if signedIn() && me() == uid && validUser(request.resource.data)
         && request.resource.data.publicId == resource.data.publicId
+        && request.resource.data.get('followers', 0) == resource.data.get('followers', 0)
         && request.resource.data.score - resource.data.score <= 60
         && request.resource.data.score - resource.data.score >= -60
         && ((request.resource.data.monthKey != resource.data.monthKey
@@ -40,7 +46,34 @@ service cloud.firestore {
             || (request.resource.data.monthKey == resource.data.monthKey
                && request.resource.data.monthScore - resource.data.monthScore <= 60
                && request.resource.data.monthScore - resource.data.monthScore >= -60));
+      // anyone else: only "followers", only by exactly +1 / -1, and only together
+      // with creating / deleting their own follows/{me_uid} document — so the
+      // count always equals the real number of followers.
+      allow update: if signedIn() && me() != uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['followers'])
+        && ((request.resource.data.followers == resource.data.get('followers', 0) + 1
+               && existsAfter(followDoc(me(), uid)) && !exists(followDoc(me(), uid)))
+            || (request.resource.data.followers == resource.data.get('followers', 0) - 1
+               && !existsAfter(followDoc(me(), uid)) && exists(followDoc(me(), uid))));
       allow delete: if false;
+    }
+
+    match /follows/{fid} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.from == me()
+        && request.resource.data.to is string && request.resource.data.to != me()
+        && fid == me() + '_' + request.resource.data.to;
+      allow delete: if signedIn() && resource.data.from == me();
+      allow update: if false;
+    }
+
+    // sha256(phone) -> country code; lets sign-in work even if the wrong country
+    // is selected. Readable before login, create-only, holds no phone number.
+    match /phones/{h} {
+      allow read: if true;
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['dial'])
+        && request.resource.data.dial is string && request.resource.data.dial.size() <= 4;
+      allow update, delete: if false;
     }
 
     // 8-digit public ID -> uid. Create-only, so an ID can never be taken over.

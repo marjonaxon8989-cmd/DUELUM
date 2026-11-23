@@ -9,6 +9,11 @@
 //                           (the phone number and password are NOT stored here —
 //                            Firebase Auth keeps the login, hashed, on Google's side)
 //   ids/{publicId}          { uid } — lets friends find you by your 8-digit ID
+//   follows/{fromUid_toUid} one doc per follow; users.followers / users.following
+//                           are counters kept in step with it by firestore.rules
+//   phones/{sha256(number)} { dial } — remembers the country code of a phone
+//                           number, so signing in works even if the wrong country
+//                           is selected on the login screen (no number is stored)
 //   friendships/{uidA_uidB} { users:[uidA,uidB] (sorted), requester, status:
 //                           'pending'|'accepted', createdAt }
 //   challenges/{autoId}     a friend duel: from, to, subj, qs (the 10 shared
@@ -67,9 +72,19 @@ const Cloud = (function(){
     const mk=monthKey();
     return { uid:id, id:d.publicId, name:d.name||'', surname:d.surname||'', score:d.score||0,
       monthKey:mk, monthScore: d.monthKey===mk ? (d.monthScore||0) : 0,
-      avatar:d.avatar||null, premium:d.premium||null, loggedIn:true };
+      avatar:d.avatar||null, premium:d.premium||null, followers:d.followers||0, following:d.following||0,
+      tgUsername:d.tgUsername||'', tgId:d.tgId||null, loggedIn:true };
   }
-  function publicRow(id,d){ const p=toProfile(id,d); return {uid:id,id:p.id,name:p.name,surname:p.surname,score:p.score,monthScore:p.monthScore,avatar:p.avatar}; }
+  function publicRow(id,d){ const p=toProfile(id,d); return {uid:id,id:p.id,name:p.name,surname:p.surname,score:p.score,monthScore:p.monthScore,
+    avatar:p.avatar,followers:p.followers,following:p.following,tgUsername:p.tgUsername}; }
+  const lower=s=>String(s||'').trim().toLowerCase();
+  async function sha256(text){
+    const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('duelum:'+text));
+    return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+  }
+  async function rememberDial(local,dial){ // create-only; ignore "already exists"
+    try{ await db.collection('phones').doc(await sha256(local)).set({dial}); }catch(e){}
+  }
 
   // Keeps the in-memory profile in sync with the server (other devices, rules).
   function watchMe(){
@@ -77,15 +92,18 @@ const Cloud = (function(){
     unsubMe=db.collection('users').doc(uid).onSnapshot(s=>{
       if(!s.exists || !current) return;
       const fresh=toProfile(s.id,s.data());
-      Object.assign(current,{score:fresh.score,monthScore:fresh.monthScore,monthKey:fresh.monthKey,
-        avatar:fresh.avatar,premium:fresh.premium,name:fresh.name,surname:fresh.surname,id:fresh.id});
+      Object.assign(current,{score:fresh.score,monthScore:fresh.monthScore,monthKey:fresh.monthKey,avatar:fresh.avatar,premium:fresh.premium,
+        name:fresh.name,surname:fresh.surname,id:fresh.id,followers:fresh.followers,following:fresh.following,tgUsername:fresh.tgUsername,tgId:fresh.tgId});
       if(onProfileCb) onProfileCb(current);
     },()=>{});
   }
   async function loadMe(){
     const s=await db.collection('users').doc(uid).get();
     if(!s.exists) return null;
-    current=toProfile(s.id,s.data()); watchMe(); return current;
+    const d=s.data(); current=toProfile(s.id,d); watchMe();
+    // older accounts: add the lower-case name fields used by name search
+    if(d.nameLower===undefined) db.collection('users').doc(uid).set({nameLower:lower(d.name),surnameLower:lower(d.surname)},{merge:true}).catch(()=>{});
+    return current;
   }
   async function allocatePublicId(){
     // ids/{id} can only be CREATED (rules forbid overwrite), so a taken ID fails and we retry.
@@ -112,24 +130,37 @@ const Cloud = (function(){
       if(!user) return null;
       uid=user.uid; return await withTimeout(loadMe(),15000);
     },
-    async register({name,surname,digits,pass}){
+    async register({name,surname,digits,local,dial,pass,tg}){
       await init();
       const cred=await auth.createUserWithEmailAndPassword(emailOf(digits),pass);
       uid=cred.user.uid;
       const publicId=await allocatePublicId();
-      const mk=monthKey();
-      await db.collection('users').doc(uid).set({name,surname,publicId,score:0,monthScore:0,monthKey:mk,
-        avatar:null,premium:null,createdAt:FV.serverTimestamp()});
+      const doc={name,surname,nameLower:lower(name),surnameLower:lower(surname),publicId,score:0,monthScore:0,monthKey:monthKey(),
+        followers:0,following:0,avatar:null,premium:null,createdAt:FV.serverTimestamp()};
+      if(tg){ doc.tgId=tg.id; doc.tgUsername=tg.username||''; }
+      await db.collection('users').doc(uid).set(doc);
+      if(local && dial) rememberDial(local,dial);
       return await loadMe();
     },
-    async login(digits,pass){
+    // Tries the remembered country code first, then the selected one, then +998.
+    async login(local,dial,pass){
       await init();
-      const cred=await auth.signInWithEmailAndPassword(emailOf(digits),pass);
+      let known=null;
+      try{ const s=await db.collection('phones').doc(await sha256(local)).get(); if(s.exists) known=s.data().dial; }catch(e){}
+      const dials=[...new Set([known,dial,'998'].filter(Boolean))];
+      let cred=null, lastErr=null;
+      for(const d of dials){
+        try{ cred=await auth.signInWithEmailAndPassword(emailOf(d+local),pass); dial=d; break; }
+        catch(e){ lastErr=e; if(!['auth/invalid-credential','auth/wrong-password','auth/user-not-found','auth/invalid-login-credentials'].includes(e.code)) break; }
+      }
+      if(!cred) throw lastErr;
       uid=cred.user.uid;
       const p=await loadMe();
       if(!p) throw Object.assign(new Error('noprofile'),{code:'auth/user-not-found'});
+      rememberDial(local,dial);
       return p;
     },
+    async linkTelegram(tg){ await db.collection('users').doc(uid).set({tgId:tg.id,tgUsername:tg.username||''},{merge:true}); },
     async logout(){ if(unsubMe) unsubMe(); unsubMe=null; current=null; uid=null; if(auth) await auth.signOut(); },
     async changePassword(p){ await auth.currentUser.updatePassword(p); },
     myUid(){ return uid; },
@@ -137,7 +168,7 @@ const Cloud = (function(){
     /* ----- profile writes (called from Store) ----- */
     saveProfile(p){
       if(!uid) return;
-      db.collection('users').doc(uid).set({name:p.name,surname:p.surname,avatar:p.avatar||null,premium:p.premium||null},{merge:true})
+      db.collection('users').doc(uid).set({name:p.name,surname:p.surname,nameLower:lower(p.name),surnameLower:lower(p.surname),avatar:p.avatar||null,premium:p.premium||null},{merge:true})
         .catch(e=>console.warn('[Cloud] saveProfile',e));
     },
     // `delta` is the already-clamped change the app applied to p.score.
@@ -157,6 +188,33 @@ const Cloud = (function(){
       let q=db.collection('users').where('score','>=',min);
       if(max!=null) q=q.where('score','<',max);
       const r=await q.orderBy('score','desc').limit(n).get(); return r.docs.map(d=>publicRow(d.id,d.data()));
+    },
+
+    /* ----- search & follows ----- */
+    async searchByName(q){
+      q=lower(q); const end=q+'\uf8ff', out={};
+      const [a,b]=await Promise.all([
+        db.collection('users').where('nameLower','>=',q).where('nameLower','<=',end).limit(20).get(),
+        db.collection('users').where('surnameLower','>=',q).where('surnameLower','<=',end).limit(20).get()]);
+      a.docs.concat(b.docs).forEach(d=>{ out[d.id]=publicRow(d.id,d.data()); });
+      return Object.values(out).sort((x,y)=>y.score-x.score);
+    },
+    async isFollowing(other){ const s=await db.collection('follows').doc(uid+'_'+other).get(); return s.exists; },
+    // One atomic batch: the follow doc + both counters (rules check they match).
+    async follow(other){
+      if(other===uid) return;
+      const b=db.batch();
+      b.set(db.collection('follows').doc(uid+'_'+other),{from:uid,to:other,createdAt:FV.serverTimestamp()});
+      b.update(db.collection('users').doc(other),{followers:FV.increment(1)});
+      b.update(db.collection('users').doc(uid),{following:FV.increment(1)});
+      await b.commit(); delete userCache[other];
+    },
+    async unfollow(other){
+      const b=db.batch();
+      b.delete(db.collection('follows').doc(uid+'_'+other));
+      b.update(db.collection('users').doc(other),{followers:FV.increment(-1)});
+      b.update(db.collection('users').doc(uid),{following:FV.increment(-1)});
+      await b.commit(); delete userCache[other];
     },
 
     /* ----- users / friends ----- */

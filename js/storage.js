@@ -58,6 +58,18 @@ const Store = (function(){
     },
     getLang(){ return get(KEYS.lang); },
     setLang(l){ return set(KEYS.lang, l); },
+    // Questions this player has already seen, per subject (kept on this device).
+    getSeen(user,subj){ return new Set(getJSON('duel_seen_'+user+'_'+subj, [])); },
+    addSeen(user,subj,id){
+      const k='duel_seen_'+user+'_'+subj, arr=getJSON(k, []);
+      if(arr.includes(id)) return; arr.push(id);
+      set(k, JSON.stringify(arr.slice(-3000)));      // cap: oldest ids are forgotten first
+    },
+    clearSeen(user,subj){ set('duel_seen_'+user+'_'+subj,'[]'); },
+    getTheme(){ return get('duel_theme'); },
+    setTheme(v){ return set('duel_theme', v); },
+    getBellSeen(){ return +(get('duel_bell')||0); },
+    setBellSeen(v){ return set('duel_bell', String(v)); },
     // 4v4 rooms (local-only demo — see README "Known limitations")
     getRooms(){ return getJSON(KEYS.rooms, {}); },
     saveRooms(r){ return set(KEYS.rooms, JSON.stringify(r)); }

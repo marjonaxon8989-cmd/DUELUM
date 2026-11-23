@@ -1,21 +1,22 @@
 // data.js — subjects shown on the home grid + their question banks,
 // the league/rating ladder, premium plans and reaction stickers.
 
+// `col` is the subject's accent colour; its icon is ICON_PATHS[k] in icons.js.
 const subjects=[
- {k:'math',name:'Matematika',ic:'📐',g:'linear-gradient(145deg,#6c4bf4,#8b5cf6)',on:2458},
- {k:'geom',name:'Geometriya',ic:'📏',g:'linear-gradient(145deg,#17a2b8,#0f7a8c)',on:860},
- {k:'onatili',name:'Ona tili',ic:'📖',g:'linear-gradient(145deg,#2e86de,#1b5fae)',on:3014},
- {k:'adabiyot',name:'Adabiyot',ic:'✒️',g:'linear-gradient(145deg,#b84ec9,#8e2fb0)',on:1340},
- {k:'hist',name:'Tarix',ic:'🏛️',g:'linear-gradient(145deg,#f5a623,#f7931e)',on:1862},
- {k:'worldhist',name:'Jahon tarixi',ic:'🗺️',g:'linear-gradient(145deg,#8a6d3b,#5f4a23)',on:730},
- {k:'geo',name:'Geografiya',ic:'🌍',g:'linear-gradient(145deg,#1dd3b0,#17a98d)',on:1005},
- {k:'phys',name:'Fizika',ic:'⚛️',g:'linear-gradient(145deg,#9b4fe0,#7b2ff0)',on:1528},
- {k:'chem',name:'Kimyo',ic:'🧪',g:'linear-gradient(145deg,#38b06b,#239e5c)',on:1237},
- {k:'bio',name:'Biologiya',ic:'🧬',g:'linear-gradient(145deg,#6fcf3f,#3fa621)',on:980},
- {k:'eng',name:'Ingliz tili',ic:'🇬🇧',g:'linear-gradient(145deg,#e8425b,#c62e58)',on:2193},
- {k:'rus',name:'Rus tili',ic:'🇷🇺',g:'linear-gradient(145deg,#2b4fc4,#1c3690)',on:1420},
- {k:'cs',name:'Informatika',ic:'💻',g:'linear-gradient(145deg,#2b3a8f,#1b2560)',on:1743},
- {k:'huquq',name:"Huquq asoslari",ic:'⚖️',g:'linear-gradient(145deg,#d9a62b,#b5841c)',on:612}
+ {k:'math',name:'Matematika',col:'#5b5bd6',on:2458},
+ {k:'geom',name:'Geometriya',col:'#0e9f9a',on:860},
+ {k:'onatili',name:'Ona tili',col:'#2f6fed',on:3014},
+ {k:'adabiyot',name:'Adabiyot',col:'#a64dbd',on:1340},
+ {k:'hist',name:'Tarix',col:'#d9822b',on:1862},
+ {k:'worldhist',name:'Jahon tarixi',col:'#8c6a3f',on:730},
+ {k:'geo',name:'Geografiya',col:'#12a150',on:1005},
+ {k:'phys',name:'Fizika',col:'#7c4dff',on:1528},
+ {k:'chem',name:'Kimyo',col:'#16a34a',on:1237},
+ {k:'bio',name:'Biologiya',col:'#65a30d',on:980},
+ {k:'eng',name:'Ingliz tili',col:'#e11d48',on:2193},
+ {k:'rus',name:'Rus tili',col:'#2563eb',on:1420},
+ {k:'cs',name:'Informatika',col:'#334155',on:1743},
+ {k:'huquq',name:"Huquq asoslari",col:'#b7791f',on:612}
 ];
 // Question banks. `c` = index of the correct option in `o`.
 // Order of questions AND options is shuffled at the start of every match
@@ -66,18 +67,18 @@ const logicBank=[
 ];
 const letters=['a','b','c','d'];
 
-// 10-tier league ladder. `min` = cumulative score needed to REACH that tier.
+// 10-tier league ladder. `min` = total score needed to REACH that tier.
 const LEAGUES=[
- {key:'bronza',min:0},
- {key:'kumush',min:250},
- {key:'oltin',min:500},
- {key:'platina',min:800},
- {key:'olmos',min:1100},
- {key:'smaragd',min:1500},
- {key:'afsonaviy',min:2000},
- {key:'usta',min:2700},
- {key:'chempion',min:3500},
- {key:'grandmaster',min:4500}
+ {key:'bronza',min:0,col:'#b07a4a'},
+ {key:'kumush',min:1000,col:'#8e9aa6'},
+ {key:'oltin',min:2500,col:'#d4a017'},
+ {key:'platina',min:5000,col:'#4aa3a2'},
+ {key:'olmos',min:10000,col:'#3b82f6'},
+ {key:'smaragd',min:20000,col:'#10b981'},
+ {key:'afsonaviy',min:35000,col:'#a855f7'},
+ {key:'usta',min:50000,col:'#ef4444'},
+ {key:'chempion',min:75000,col:'#f59e0b'},
+ {key:'grandmaster',min:100000,col:'#e11d48'}
 ];
 
 // 4 premium plans. `orig` is only used to show a struck-through "before discount" price.
@@ -88,7 +89,8 @@ const PREMIUM_PLANS=[
  {id:'year',days:365,price:2500000,discount:50,orig:5000000}
 ];
 
-const STICKERS=['😂','😠','🤜🤛','😬','😴'];
+// Reaction stickers — drawn SVG faces (icons.js: r_laugh, r_angry, ...), not emoji.
+const STICKERS=['r_laugh','r_angry','r_fist','r_grimace','r_sleep'];
 
 // World phone country codes: [ISO2, dial code, display name]. The flag is
 // drawn from the ISO2 code at render time (see flagEmoji in app.js) rather
