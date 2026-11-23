@@ -14,7 +14,7 @@ const TG = {
   // While false, sign-up works without the Telegram step (nobody gets locked out).
   loginWidget: false,
   botUsername: 'duelum_bot',                       // without @
-  apiUrl: 'https://duelum-bot.onrender.com',       // the bot server (Render web service)
+  apiUrl: 'https://duelum-bot-ydap.onrender.com',       // the bot server (Render web service)
   channel: 'duelum',                               // channel username without @ (mandatory subscription)
   links: {
     channel: 'https://t.me/duelum',
