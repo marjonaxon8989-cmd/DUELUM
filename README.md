@@ -75,6 +75,16 @@ O'zgartirish: `js/data.js` → `LEAGUES`.
   ham "Xabar yozish" bor. Xabarni faqat ikki ishtirokchi o'qiy oladi (Firestore qoidalari).
 - **Do'stlar:** so'rov yuborish/qabul qilish, do'stni 1v1 duelga chaqirish (bir xil savollar,
   jonli hisob, stikerlar).
+- **Real raqib:** bir vaqtda bir xil fanni tanlagan ikki o'yinchi (dunyoning istalgan joyidan)
+  avtomatik juftlanadi; 15 soniyada odam topilmasa — AI.
+- **4v4 onlayn:** xona yaratiladi, do'stlar 12 xonali ID (va parol) bilan istalgan qurilmadan
+  qo'shiladi; jamoa tanlanadi; host boshlaydi; hammaga bir xil 50 savol; bo'sh joylar AI bilan
+  to'ldiriladi (natija hamma qurilmada bir xil). "Begonalar bilan" — ochiq xona, 45 soniyada
+  o'zi boshlanadi.
+- **Obunachilar/obunalar ro'yxati:** profildagi raqamlarni bosing (o'zingiz va boshqalar uchun).
+- **Chatda media:** rasm (avtomatik siqiladi), fayl va ovozli xabar (60 soniyagacha). Firebase'ning
+  bepul tarifida fayl xizmati (Storage) yo'qligi sababli media bazaning o'zida saqlanadi —
+  har bir element 700 KB gacha.
 - **Kirish:** telefon + parol. Brauzer parolni saqlashni taklif qiladi. Kirishda davlat kodi
   adashib tanlansa ham kirish ishlaydi (raqamning davlat kodi eslab qolinadi).
 
@@ -113,8 +123,8 @@ uyg'onadi. Sayt ochilganda serverni oldindan uyg'otadi; bot xabarlari esa uyg'on
 
 ## Halollik: cheklovlar
 
-1. Tasodifiy raqib qidirish AI bilan tugaydi (navbat-server yo'q). Do'st bilan duel — haqiqiy.
-2. 4v4 xonalar bitta brauzerda ishlaydi, jamoadoshlar simulyatsiya. Ovozli chat — belgi.
+1. Raqib qidirishda 15 soniyada odam topilmasa AI o'ynaydi; 4v4 dagi bo'sh joylar AI.
+2. 4v4 lobbidagi ovozli chat (mikrofon tugmasi) — hozircha belgi (WebRTC server kerak).
 3. Premium hali sotilmaydi: reja tanlansa "Hali premium xizmatimiz mavjud emas" chiqadi.
    To'lov (Payme / Click / Stripe) ulanganda premiumni server berishi kerak.
 4. Ballni brauzer yozadi; qoidalar bir yozuvda ±60 dan ortiq o'zgarishga yo'l qo'ymaydi.

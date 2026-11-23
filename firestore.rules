@@ -89,10 +89,40 @@ service cloud.firestore {
         allow read: if signedIn() && me() in chatUsers(cid);
         allow create: if signedIn() && me() in chatUsers(cid)
           && request.resource.data.from == me()
-          && request.resource.data.text is string
-          && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1000;
+          && ((request.resource.data.get('type', 'text') == 'text'
+                && request.resource.data.text is string
+                && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1000)
+              || (request.resource.data.get('type', '') in ['image', 'voice', 'file']
+                && request.resource.data.media is string && request.resource.data.media.size() < 1000000));
         allow update, delete: if false;
       }
+    }
+
+    // Random-opponent queue: your own entry is yours; someone else may only switch a
+    // waiting entry to "matched" by them, together with creating the match itself.
+    match /queue/{qid} {
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn() && qid == me();
+      allow update: if signedIn() && qid != me()
+        && resource.data.status == 'waiting'
+        && request.resource.data.status == 'matched' && request.resource.data.matchedBy == me()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'matchId', 'matchedBy'])
+        && existsAfter(/databases/$(database)/documents/challenges/$(request.resource.data.matchId));
+    }
+
+    // 4v4 rooms: the host controls the room; other players may only add, change or
+    // remove THEIR OWN entry in `players`. At most 8 players.
+    match /rooms/{rid} {
+      allow read: if signedIn();
+      allow create: if signedIn() && rid.size() == 12 && request.resource.data.host == me()
+        && request.resource.data.players.size() == 1 && me() in request.resource.data.players;
+      allow update: if signedIn() && resource.data.host == me() && request.resource.data.host == me()
+        && request.resource.data.players.size() <= 8;
+      allow update: if signedIn() && resource.data.host != me()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['players'])
+        && request.resource.data.players.diff(resource.data.players).affectedKeys().hasOnly([me()])
+        && request.resource.data.players.size() <= 8;
+      allow delete: if signedIn() && resource.data.host == me();
     }
 
     // sha256(phone) -> country code; lets sign-in work even if the wrong country
@@ -132,14 +162,19 @@ service cloud.firestore {
     match /challenges/{cid} {
       function friendship(pair) { return get(/databases/$(database)/documents/friendships/$(pair)).data; }
       allow read: if signedIn() && (resource == null || me() == resource.data.from || me() == resource.data.to);
+      function queueAfter(u) { return getAfter(/databases/$(database)/documents/queue/$(u)).data; }
       allow create: if signedIn()
         && request.resource.data.from == me()
-        && request.resource.data.status == 'pending'
         && request.resource.data.to is string && request.resource.data.to != me()
         && request.resource.data.qs is list && request.resource.data.qs.size() <= 10
-        && friendship(request.resource.data.pair).status == 'accepted'
-        && me() in friendship(request.resource.data.pair).users
-        && request.resource.data.to in friendship(request.resource.data.pair).users;
+        && ((request.resource.data.status == 'pending'
+              && friendship(request.resource.data.pair).status == 'accepted'
+              && me() in friendship(request.resource.data.pair).users
+              && request.resource.data.to in friendship(request.resource.data.pair).users)
+            // random opponent: created in the same transaction that claims their queue entry
+            || (request.resource.data.get('kind', '') == 'random' && request.resource.data.status == 'accepted'
+              && queueAfter(request.resource.data.to).matchId == cid
+              && queueAfter(request.resource.data.to).matchedBy == me()));
       allow update: if signedIn() && (me() == resource.data.from || me() == resource.data.to)
         && request.resource.data.from == resource.data.from
         && request.resource.data.to == resource.data.to

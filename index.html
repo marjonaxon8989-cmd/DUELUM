@@ -221,6 +221,16 @@
   <div id="upContent"></div>
 </div>
 
+<!-- FOLLOWERS / FOLLOWING LIST -->
+<div class="screen" id="people">
+  <header class="appbar">
+    <button class="iconbtn" onclick="peopleBackGo()"><i data-icon="back"></i></button>
+    <b class="appbar-title" id="peopleTitle"></b>
+    <span class="iconbtn ghostspace"></span>
+  </header>
+  <div id="peopleList"></div>
+</div>
+
 <!-- MESSAGES: list of conversations (newest first, one under another) -->
 <div class="screen" id="chats">
   <header class="appbar">
@@ -239,10 +249,18 @@
     <span class="iconbtn ghostspace"></span>
   </header>
   <div id="msgList"></div>
-  <form class="msgbar" onsubmit="event.preventDefault();sendMsg()">
+  <form class="msgbar" id="msgForm" onsubmit="event.preventDefault();sendMsg()">
+    <button type="button" class="roundbtn" onclick="pickAttachment()" aria-label="attach"><i data-icon="clip" data-size="20"></i></button>
     <input id="msgInput" maxlength="1000" autocomplete="off" data-i18n-ph="msgPh" placeholder="Xabar yozing...">
+    <button type="button" class="roundbtn" onclick="toggleRecord()" aria-label="voice"><i data-icon="mic" data-size="20"></i></button>
     <button type="submit" class="sendbtn" aria-label="send"><i data-icon="send" data-size="20"></i></button>
   </form>
+  <div class="msgbar recbar" id="recBar" style="display:none">
+    <button type="button" class="roundbtn" onclick="stopRecord(false)" aria-label="cancel"><i data-icon="x" data-size="20"></i></button>
+    <span class="recdot"></span><b id="recTime">0:00</b><span class="muted small" style="flex:1" data-i18n="recording">Yozib olinmoqda...</span>
+    <button type="button" class="sendbtn" onclick="stopRecord(true)" aria-label="send"><i data-icon="send" data-size="20"></i></button>
+  </div>
+  <input type="file" id="attachInput" style="display:none" onchange="onAttach(this)">
 </div>
 
 <!-- TEAM BATTLE 4v4 -->
@@ -271,8 +289,8 @@
     </div>
     <div class="pfstats">
       <div><b id="pfScore">0</b><span data-i18n="score">Ball</span></div>
-      <div><b id="pfFollowers">0</b><span data-i18n="followers">Obunachilar</span></div>
-      <div><b id="pfFollowing">0</b><span data-i18n="followingLbl">Obunalar</span></div>
+      <div class="tap" onclick="openPeople(profile.uid,'followers')"><b id="pfFollowers">0</b><span data-i18n="followers">Obunachilar</span></div>
+      <div class="tap" onclick="openPeople(profile.uid,'following')"><b id="pfFollowing">0</b><span data-i18n="followingLbl">Obunalar</span></div>
     </div>
   </div>
   <input type="file" id="avatarInput" accept="image/*" style="display:none">

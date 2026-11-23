@@ -14,6 +14,11 @@
 //   chats/{uidA_uidB}       a conversation: users (sorted), lastText, lastFrom,
 //                           lastAt, readAt.{uid}; messages in chats/{id}/messages
 //                           (allowed when one follows the other, or they are friends)
+//   queue/{uid}             random-opponent matchmaking: {subj, name, status:
+//                           'waiting'|'matched'|'gone', matchId, matchedBy, ts}
+//   rooms/{12-digit id}     4v4 rooms: host, name, passHash, subj, status
+//                           ('lobby'|'playing'|'closed'), public, qs, players.{uid}
+//                           = {name, team 'A'|'B', correct, answered, done}
 //   phones/{sha256(number)} { dial } — remembers the country code of a phone
 //                           number, so signing in works even if the wrong country
 //                           is selected on the login screen (no number is stored)
@@ -239,19 +244,93 @@ const Cloud = (function(){
     },
     // cb([{id, from, text, at(ms), pending}]) oldest first, last 150
     watchMessages(cid,cb){
-      return db.collection('chats').doc(cid).collection('messages').orderBy('at','desc').limit(150).onSnapshot({includeMetadataChanges:true},q=>{
-        cb(q.docs.map(d=>{ const x=d.data({serverTimestamps:'estimate'}); return {id:d.id,from:x.from,text:x.text,at:ms(x.at),pending:d.metadata&&d.metadata.hasPendingWrites}; }).reverse());
+      return db.collection('chats').doc(cid).collection('messages').orderBy('at','desc').limit(60).onSnapshot({includeMetadataChanges:true},q=>{
+        cb(q.docs.map(d=>{ const x=d.data({serverTimestamps:'estimate'}); return {id:d.id,from:x.from,type:x.type||'text',text:x.text,media:x.media,name:x.name,size:x.size,dur:x.dur,at:ms(x.at),pending:d.metadata&&d.metadata.hasPendingWrites}; }).reverse());
       },e=>console.warn('[Cloud] messages',e));
     },
-    async sendMessage(cid,text){
-      text=String(text).trim().slice(0,1000); if(!text) return;
+    // msg = {type:'text', text} | {type:'image'|'voice'|'file', media:dataURL, name?, size?, dur?}
+    // Media is stored inline (base64) because Firebase Storage is not on the free plan;
+    // the app keeps each item under ~700 KB so the document stays under Firestore's 1 MB.
+    async sendMessage(cid,msg,preview){
+      if(typeof msg==='string') msg={type:'text',text:msg};
+      if(msg.type==='text'){ msg.text=String(msg.text||'').trim().slice(0,1000); if(!msg.text) return; }
       const chat=db.collection('chats').doc(cid), b=db.batch();
-      b.set(chat.collection('messages').doc(),{from:uid,text,at:FV.serverTimestamp()});
-      const u={lastText:text.slice(0,120),lastFrom:uid,lastAt:FV.serverTimestamp()}; u['readAt.'+uid]=FV.serverTimestamp();
+      b.set(chat.collection('messages').doc(),Object.assign({from:uid,at:FV.serverTimestamp()},msg));
+      const u={lastText:String(preview||msg.text||'').slice(0,120),lastFrom:uid,lastAt:FV.serverTimestamp()}; u['readAt.'+uid]=FV.serverTimestamp();
       b.update(chat,u);
       await b.commit();
     },
     markRead(cid){ const u={}; u['readAt.'+uid]=FV.serverTimestamp(); return db.collection('chats').doc(cid).update(u).catch(()=>{}); },
+
+    /* ----- follower / following lists ----- */
+    async listFollowers(of){ const q=await db.collection('follows').where('to','==',of).limit(300).get(); return q.docs.map(d=>d.data().from); },
+    async listFollowing(of){ const q=await db.collection('follows').where('from','==',of).limit(300).get(); return q.docs.map(d=>d.data().to); },
+    async getUsers(ids){ const out=[]; await Promise.all(ids.map(async id=>{ try{ const u=await this.getUser(id); if(u) out.push(u); }catch(e){} })); return out; },
+
+    /* ----- random-opponent matchmaking (same subject, anywhere in the world) ----- */
+    // Only the player with the SMALLER uid claims the other one, so two waiting
+    // players can never create two matches for each other at the same moment.
+    async findOpponent(subj,myName,qs){
+      const q=await db.collection('queue').where('subj','==',subj).where('status','==','waiting').limit(20).get();
+      const cands=q.docs.filter(d=>d.id!==uid && d.id>uid && Date.now()-ms(d.data().ts)<25000);
+      for(const d of cands){
+        try{
+          const res=await db.runTransaction(async tx=>{
+            const s=await tx.get(d.ref);
+            if(!s.exists || s.data().status!=='waiting') throw new Error('taken');
+            const ch=db.collection('challenges').doc(), other=d.id, on=s.data().name||'';
+            const base={}; base[uid]=0; base[other]=0; const no={}; no[uid]=false; no[other]=false;
+            tx.update(d.ref,{status:'matched',matchId:ch.id,matchedBy:uid});
+            tx.set(ch,{kind:'random',from:uid,to:other,fromName:myName,toName:on,pair:pairId(uid,other),subj,qs,status:'accepted',
+              createdAt:FV.serverTimestamp(),scores:base,answered:{...base},done:no,left:{...no}});
+            return {cid:ch.id,other,otherName:on};
+          });
+          db.collection('queue').doc(uid).delete().catch(()=>{});
+          return res;
+        }catch(e){ /* someone else got them first — try the next one */ }
+      }
+      return null;
+    },
+    enqueue(subj,name){ return db.collection('queue').doc(uid).set({subj,name,status:'waiting',ts:FV.serverTimestamp(),matchId:null,matchedBy:null}); },
+    watchQueue(cb){ return db.collection('queue').doc(uid).onSnapshot(s=>cb(s.exists?s.data():null),()=>{}); },
+    // Leave the queue unless someone already matched us (then returns their match).
+    async leaveQueue(){
+      const ref=db.collection('queue').doc(uid);
+      try{
+        return await db.runTransaction(async tx=>{
+          const s=await tx.get(ref); if(!s.exists) return null;
+          const d=s.data(); if(d.status==='matched') { tx.delete(ref); return d; }
+          tx.delete(ref); return null;
+        });
+      }catch(e){ ref.delete().catch(()=>{}); return null; }
+    },
+    async getChallenge(id){ const s=await db.collection('challenges').doc(id).get(); return s.exists?Object.assign({id:s.id},s.data()):null; },
+
+    /* ----- 4v4 rooms (real, any device) ----- */
+    sha:t=>sha256(t),
+    async createRoom(id,{name,pass,subj,isPublic,myName}){
+      const players={}; players[uid]={name:myName,team:'A',correct:0,answered:0,done:false};
+      await db.collection('rooms').doc(id).set({host:uid,name,passHash:pass?await sha256('room:'+pass):'',subj,status:'lobby',public:!!isPublic,
+        players,qs:[],createdAt:FV.serverTimestamp()});
+    },
+    async getRoom(id){ const s=await db.collection('rooms').doc(id).get(); return s.exists?Object.assign({id:s.id},s.data()):null; },
+    async checkRoomPass(room,pass){ return !room.passHash || room.passHash===await sha256('room:'+pass); },
+    async joinRoom(id,myName,team){ const u={}; u['players.'+uid]={name:myName,team,correct:0,answered:0,done:false}; await db.collection('rooms').doc(id).update(u); },
+    async setTeam(id,team){ const u={}; u['players.'+uid+'.team']=team; await db.collection('rooms').doc(id).update(u); },
+    async leaveRoom(id,isHost){
+      const ref=db.collection('rooms').doc(id);
+      if(isHost) return ref.update({status:'closed'}).catch(()=>{});
+      const u={}; u['players.'+uid]=FV.delete(); return ref.update(u).catch(()=>{});
+    },
+    startRoom(id,subj,qs){ return db.collection('rooms').doc(id).update({status:'playing',subj,qs,startedAt:FV.serverTimestamp()}); },
+    roomProgress(id,correct,answered,done){ const u={}; u['players.'+uid+'.correct']=correct; u['players.'+uid+'.answered']=answered; if(done) u['players.'+uid+'.done']=true; return db.collection('rooms').doc(id).update(u).catch(()=>{}); },
+    watchRoom(id,cb){ return db.collection('rooms').doc(id).onSnapshot(s=>cb(s.exists?Object.assign({id:s.id},s.data()):null),()=>{}); },
+    async findPublicRoom(subj){
+      const q=await db.collection('rooms').where('public','==',true).where('status','==','lobby').limit(20).get();
+      const ok=q.docs.map(d=>Object.assign({id:d.id},d.data())).filter(r=>Object.keys(r.players||{}).length<8 && r.subj===subj && Date.now()-ms(r.createdAt)<10*60000);
+      return ok[0]||null;
+    },
+    myUidSafe(){ return uid; },
 
     /* ----- users / friends ----- */
     async getUser(id,force){

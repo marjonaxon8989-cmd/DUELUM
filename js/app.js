@@ -14,7 +14,7 @@
 //  - Questions come from questions.js; every question a player has seen is
 //    remembered (Store.getSeen/addSeen) so it does not come back to them.
 
-const NAV_SCREENS=['home','rating','friends','profile','chats'];
+const NAV_SCREENS=['home','rating','friends','profile','chats','people'];
 const ROUND_LIMIT_1V1=10, ROUND_LIMIT_TEAM=50, QUESTION_SECONDS=15, SEARCH_SECONDS=15;
 
 let curSubj='math', qi=0, timer=null, tleft=QUESTION_SECONDS, meScore=0, aiScore=0, fiftyUsed=false, hintUses=0, locked=false, isLogic=false, isTeam=false;
@@ -83,7 +83,7 @@ function applyLang(){
 /* ---------- routing ---------- */
 function go(id){
   const cur=document.querySelector('.screen.active');
-  if(cur && cur.id!==id && cur.id!=='userProfile') prevScreen=cur.id;
+  if(cur && cur.id!==id && !['userProfile','people'].includes(cur.id)) prevScreen=cur.id;
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   $(id).classList.add('active');
   document.querySelectorAll('nav.bn button').forEach(b=>b.classList.toggle('on',b.dataset.s===id));
@@ -94,13 +94,17 @@ function go(id){
   if(id==='rating') renderRating();
   if(id==='profile') renderProfile();
   if(id==='friends') renderFriends();
-  if(id==='teamBattle'){ teamState='hub'; renderTeamContent(); }
+  if(id==='teamBattle'){ if(!room) teamState='hub'; renderTeamContent(); }
   if(id==='premium') renderPlans();
   if(id==='chats') renderChats();
   if(id!=='chat') stopChat();
   if(id!=='duel' && id!=='searching') showPendingChallenge();
 }
-function upBack(){ go(prevScreen && prevScreen!=='userProfile' ? prevScreen : 'friends'); }
+function upBack(){
+  if(prevScreen==='chat' && lastChatOther){ openChatWith(lastChatOther); return; }   // back to the open conversation
+  go(prevScreen && !['userProfile','people'].includes(prevScreen) ? prevScreen : 'friends');
+}
+function peopleBackGo(){ if(peopleBack==='userProfile' && upUser) openUser(upUser.uid); else go(peopleBack||'profile'); }
 
 /* ---------- home ---------- */
 function subjIcon(s,size){ return `<div class="tile" style="background:${s.col}1f;color:${s.col}">${icon(s.k,size||22)}</div>`; }
@@ -120,17 +124,60 @@ function openIntro(k){
 }
 function startFromIntro(){ startSearch(pendingSubj); }
 
-/* ---------- matchmaking (AI fallback — see top) ---------- */
+/* ---------- matchmaking ----------
+   Online: players who pick the SAME subject at the same time (anywhere) are paired
+   for a real duel through the Firestore queue. Nobody found in 15 s -> AI opponent. */
+let mmUnsub=null, mmPoll=null, mmActive=false;
 function startSearch(key){
   let sLeft=SEARCH_SECONDS;
   $('searchTitle').textContent=t('searching'); $('searchTimer').textContent=sLeft;
   go('searching');
-  searchInterval=setInterval(()=>{
+  const online=Cloud.enabled && profile;
+  if(online) startMatchmaking(key);
+  searchInterval=setInterval(async()=>{
     sLeft--; $('searchTimer').textContent=Math.max(0,sLeft);
-    if(sLeft<=0){ clearInterval(searchInterval); $('searchTitle').textContent=t('foundAI'); searchTimeout=setTimeout(()=>beginDuel(key),900); }
+    if(sLeft>0) return;
+    clearInterval(searchInterval);
+    if(online){
+      const m=await stopMatchmaking(true);
+      if(m && m.matchId){ joinRandomMatch(m.matchId); return; }   // matched at the last second
+      if(pvp) return;                                             // already started
+    }
+    $('searchTitle').textContent=t('foundAI'); searchTimeout=setTimeout(()=>beginDuel(key),900);
   },1000);
 }
+async function startMatchmaking(key){
+  mmActive=true; curSubj=key;
+  const myName=profile.name+' '+profile.surname, seed=makeSeed(key,ROUND_LIMIT_1V1);
+  const tryClaim=async()=>{
+    if(!mmActive) return;
+    try{ const r=await Cloud.findOpponent(key,myName,seed); if(r && mmActive){ await stopMatchmaking(false); startRandomPvp(r.cid,r.other,r.otherName,key,seed,'from'); } }catch(e){ console.warn('[mm]',e); }
+  };
+  await tryClaim(); if(!mmActive) return;
+  try{ await Cloud.enqueue(key,myName); }catch(e){ console.warn('[mm] enqueue',e); return; }
+  mmUnsub=Cloud.watchQueue(q=>{ if(mmActive && q && q.status==='matched' && q.matchId){ stopMatchmaking(false); Cloud.leaveQueue(); joinRandomMatch(q.matchId); } });
+  mmPoll=setInterval(tryClaim,3000);
+}
+async function stopMatchmaking(leave){
+  mmActive=false; clearInterval(mmPoll); if(mmUnsub) mmUnsub(); mmUnsub=null;
+  return leave ? await Cloud.leaveQueue() : null;
+}
+async function joinRandomMatch(cid){
+  let ch=null;
+  for(let i=0;i<8 && !ch;i++){ try{ ch=await Cloud.getChallenge(cid); }catch(e){} if(!ch) await new Promise(r=>setTimeout(r,400)); }   // the match doc may arrive a moment later
+  if(!ch){ beginDuel(curSubj); return; }
+  startRandomPvp(cid,ch.from,ch.fromName,ch.subj,ch.qs,'to');
+}
+function startRandomPvp(cid,other,otherName,subj,qs,side){
+  clearInterval(searchInterval); clearTimeout(searchTimeout); stopPvp();
+  $('searchTitle').textContent=t('oppFound')+' '+(otherName||'');
+  pvp={id:cid,opp:other,oppName:(otherName||'').split(' ')[0]||t('opp'),oppUser:friendUsers[other],state:'playing',oppScore:0,oppAnswered:0,oppDone:false,oppLeft:false,subj,seed:qs,random:true};
+  pvp.unsub=Cloud.watchChallenge(cid,onChallengeUpdate);
+  Cloud.getUser(other).then(u=>{ if(u&&pvp){ friendUsers[other]=u; pvp.oppUser=u; $('oppAv').innerHTML=avatarHtml(u); } }).catch(()=>{});
+  curSubj=subj; setTimeout(()=>beginDuel(subj,seedToQs(subj,qs)),700);
+}
 function cancelSearch(){
+  if(mmActive) stopMatchmaking(true);
   if(pvp && pvp.state==='waiting'){ Cloud.setChallengeStatus(pvp.id,'cancelled'); stopPvp(); go('friends'); return; }
   go('home');
 }
@@ -195,7 +242,7 @@ function loadQ(){
 }
 function resolveQuestion(picked){
   const item=currentItem(), correct=(picked===item.c);
-  if(isTeam){ if(correct) teamYouCorrect++; else teamYouWrong++; }
+  if(isTeam){ if(correct) teamYouCorrect++; else teamYouWrong++; if(room) Cloud.roomProgress(room.id,teamYouCorrect,qi+1); }
   else {
     if(correct){ meScore++; matchDelta+=addScore(1); } else { matchDelta+=addScore(-1); }
     if(pvp) Cloud.pvpProgress(pvp.id,meScore,qi+1); else aiAnswers();
@@ -229,8 +276,8 @@ function useHint(){
 function leaveGame(){
   if(!confirm(t('confirmLeave'))) return;
   clearInterval(timer); matchToken++;
-  if(isTeam){ applyTeamResult(false,true); go('teamBattle'); }
-  else if(pvp){ Cloud.pvpLeave(pvp.id); addScore(-10); stopPvp(); go('friends'); }
+  if(isTeam){ applyTeamResult(false,true); if(room){ Cloud.roomProgress(room.id,teamYouCorrect,qi,true); closeRoomState(); } teamState='hub'; go('teamBattle'); }
+  else if(pvp){ const rnd=pvp.random; Cloud.pvpLeave(pvp.id); addScore(-10); stopPvp(); go(rnd?'home':'friends'); }
   else { addScore(-10); go('home'); }
   renderRating();
 }
@@ -245,14 +292,16 @@ function sendSticker(s,fromOpp){
 /* ---------- results ---------- */
 function endMatch(){
   clearInterval(timer);
-  if(isTeam) finishTeamMatch();
+  if(isTeam && room){ room.finished=true; room.finishedAt=Date.now(); Cloud.roomProgress(room.id,teamYouCorrect,matchQs.length,true); renderTeamResult(); }
+  else if(isTeam) finishTeamMatch();
   else if(pvp){ pvp.state='ended'; Cloud.pvpProgress(pvp.id,meScore,roundLimit(),true); renderPvpResult(); }
   else finish1v1Match();
 }
 function closeResult(){
   $('resultOverlay').classList.remove('on');
-  const wasPvp=!!pvp; stopPvp();
-  go(isTeam?'teamBattle':(wasPvp?'friends':'home')); renderRating();
+  const wasPvp=!!pvp, wasRandom=pvp&&pvp.random; stopPvp();
+  if(isTeam){ clearTimeout(renderTeamResult._t); closeRoomState(); teamState='hub'; }
+  go(isTeam?'teamBattle':(wasPvp&&!wasRandom?'friends':'home')); renderRating();
 }
 function deltaLine(d){
   if(d>0) return `<div class="delta-up">+${d} ${t('pointsEarned')}</div>`;
@@ -379,7 +428,9 @@ async function openUser(uid){
   if(profile && uid===profile.uid){ go('profile'); return; }
   go('userProfile'); $('upContent').innerHTML='<div class="note">…</div>'; $('upTitle').textContent='';
   try{
+    if(friendUsers[uid]) renderUserProfile(friendUsers[uid],myFollowing.has(uid));     // instant from cache
     const [u,following]=await Promise.all([Cloud.getUser(uid,true),Cloud.isFollowing(uid)]);
+    if(following) myFollowing.add(uid); else myFollowing.delete(uid);
     if(!u){ $('upContent').innerHTML=`<div class="note">${t('friendNotFound')}</div>`; return; }
     friendUsers[uid]=u; renderUserProfile(u,following);
   }catch(e){ $('upContent').innerHTML=`<div class="note">${cloudErrText(e)}</div>`; }
@@ -395,8 +446,8 @@ function renderUserProfile(u,following){
   $('upContent').innerHTML=`
     <div class="pfhead"><div class="av xl">${avatarHtml(u)}</div>
       <div class="pfstats"><div><b>${fmtNum(u.score)}</b><span>${t('score')}</span></div>
-      <div><b id="upFollowers">${fmtNum(u.followers||0)}</b><span>${t('followers')}</span></div>
-      <div><b>${fmtNum(u.following||0)}</b><span>${t('followingLbl')}</span></div></div></div>
+      <div class="tap" onclick="openPeople('${u.uid}','followers')"><b id="upFollowers">${fmtNum(u.followers||0)}</b><span>${t('followers')}</span></div>
+      <div class="tap" onclick="openPeople('${u.uid}','following')"><b>${fmtNum(u.following||0)}</b><span>${t('followingLbl')}</span></div></div></div>
     <div class="pfinfo"><div class="pfname">${esc(u.name+' '+u.surname)}</div><div class="muted small">ID: ${esc(u.id)}${u.tgUsername?' · @'+esc(u.tgUsername):''}</div>
       <div class="pfbadges">${leagueBadge(u.score)}</div></div>
     <div class="pfactions">
@@ -419,14 +470,45 @@ function openUserMore(){
     </div><button class="btn ghost" style="margin-top:8px" onclick="closeModal()">${t('cancel')}</button>`);
 }
 function copyId(id){ if(navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(id).then(()=>toast(t('copied'))); else prompt('ID',id); }
+// Optimistic: the button and counters change instantly, the server catches up.
+let myFollowing=new Set();
 async function toggleFollow(uid,isF){
-  const btn=$('followBtn'); if(btn) btn.disabled=true;
-  try{
-    if(isF) await Cloud.unfollow(uid); else await Cloud.follow(uid);
-    const u=await Cloud.getUser(uid,true); renderUserProfile(u,!isF);
-    ratingCache={};
-  }catch(e){ console.warn(e); toast(cloudErrText(e)); if(btn) btn.disabled=false; }
+  isF=!!(+isF); const now=!isF;
+  if(now) myFollowing.add(uid); else myFollowing.delete(uid);
+  if(profile) profile.following=Math.max(0,(profile.following||0)+(now?1:-1));
+  const u=friendUsers[uid]; if(u) u.followers=Math.max(0,(u.followers||0)+(now?1:-1));
+  if(upUser && upUser.uid===uid){ renderUserProfile(u||upUser,now); }
+  document.querySelectorAll(`[data-follow="${uid}"]`).forEach(b=>setFollowPill(b,now));
+  renderProfile();
+  try{ if(now) await Cloud.follow(uid); else await Cloud.unfollow(uid); ratingCache={}; }
+  catch(e){
+    console.warn(e); toast(cloudErrText(e));
+    if(now) myFollowing.delete(uid); else myFollowing.add(uid);
+    if(profile) profile.following=Math.max(0,(profile.following||0)+(now?-1:1));
+    if(u) u.followers=Math.max(0,(u.followers||0)+(now?-1:1));
+    if(upUser && upUser.uid===uid) renderUserProfile(u||upUser,isF);
+    document.querySelectorAll(`[data-follow="${uid}"]`).forEach(b=>setFollowPill(b,isF));
+    renderProfile();
+  }
 }
+function setFollowPill(b,on){ b.className='pill'+(on?' soft':''); b.textContent=on?t('followingBtn'):t('followBtn'); b.onclick=e=>{ e.stopPropagation(); toggleFollow(b.dataset.follow,on?1:0); }; }
+function followPill(uid){ if(!profile||uid===profile.uid) return ''; const on=myFollowing.has(uid);
+  return `<button class="pill${on?' soft':''}" data-follow="${uid}" onclick="event.stopPropagation();toggleFollow('${uid}',${on?1:0})">${on?t('followingBtn'):t('followBtn')}</button>`; }
+// Followers / following list of any player (Instagram-style)
+async function openPeople(uid,kind){
+  if(!Cloud.enabled) return;
+  const u = uid===profile.uid ? profile : (friendUsers[uid]||{});
+  $('peopleTitle').textContent=(u.name?u.name+' · ':'')+(kind==='followers'?t('followers'):t('followingLbl'));
+  $('peopleList').innerHTML='<div class="note">…</div>'; peopleBack=document.querySelector('.screen.active').id; go('people');
+  try{
+    const ids = kind==='followers' ? await Cloud.listFollowers(uid) : await Cloud.listFollowing(uid);
+    const users=await Cloud.getUsers(ids); users.forEach(x=>friendUsers[x.uid]=x);
+    $('peopleList').innerHTML = users.length ? `<div class="urows">${users.sort((a,b)=>b.score-a.score).map(x=>`<div class="urow" onclick="openUser('${x.uid}')"><div class="av">${avatarHtml(x)}</div>
+      <div class="info"><b>${esc(x.name+' '+x.surname)}</b><span>ID ${esc(x.id)} · ${leagueName(leagueIdx(x.score))}</span></div>${followPill(x.uid)}</div>`).join('')}</div>`
+      : `<div class="center-empty">${icon('users',40)}<span>${kind==='followers'?t('noFollowers'):t('noFollowing')}</span></div>`;
+  }catch(e){ $('peopleList').innerHTML=`<div class="note">${cloudErrText(e)}</div>`; }
+}
+let peopleBack='profile';
 
 /* ---------- premium (not on sale yet) ---------- */
 function priceLabel(n){ return n.toLocaleString('ru-RU').replace(/ /g,' ')+" so'm"; }
@@ -477,58 +559,152 @@ async function addFriendUid(uid){
 }
 async function acceptFriendOf(uid){ const f=friendsState.find(x=>x.other===uid); if(f){ await acceptFriend(f.fid); setTimeout(()=>openUser(uid),400); } }
 
-/* ---------- 4v4 (local demo) ---------- */
+/* ---------- 4v4 team battle (online rooms) ----------
+   Rooms live in Firestore, so friends join from any device by the 12-digit ID.
+   Everyone gets the same 50 questions; empty seats are filled by AI players whose
+   results come from a random generator seeded with the room id, so every device
+   shows the same final score. */
+let room=null;            // {id, isHost, unsub, data, started, finished, applied}
+let teamSubj='math';
+function seededRand(seed){ let h=2166136261; for(const c of seed) h=Math.imul(h^c.charCodeAt(0),16777619); return ()=>{ h+=0x6D2B79F5; let t=h; t=Math.imul(t^t>>>15,t|1); t^=t+Math.imul(t^t>>>7,t|61); return ((t^t>>>14)>>>0)/4294967296; }; }
 function teamBack(){
+  if(teamState==='lobby' && room){ leaveRoomNow(); return; }
   if(teamState==='hub') go('friends');
-  else if(teamState==='friendsMenu'){ teamState='hub'; renderTeamContent(); }
-  else if(teamState==='create'||teamState==='join'){ teamState='friendsMenu'; renderTeamContent(); }
-  else if(teamState==='lobby'){ teamState = teamMode==='friends' ? 'friendsMenu' : 'hub'; renderTeamContent(); }
   else { teamState='hub'; renderTeamContent(); }
 }
 function modeCard(ic,title,sub,onclick,extra){ return `<div class="card modeCard ${extra||''}" ${onclick?`onclick="${onclick}"`:''}>${icon(ic,24)}<div><b>${title}</b>${sub?`<span>${sub}</span>`:''}</div></div>`; }
+function subjOptions(sel){ return subjects.map(s=>`<option value="${s.k}"${s.k===sel?' selected':''}>${esc(s.name)}</option>`).join('')+`<option value="logic"${sel==='logic'?' selected':''}>${t('logicTag')}</option>`; }
 function renderTeamContent(){
   const el=$('teamContent'); if(!el) return;
+  if(!Cloud.enabled){ el.innerHTML=`<div class="note">${t('friendsLocalNote')}</div>`; return; }
   if(teamState==='hub'){
     const lockedS=!canPlayStrangers(myScore());
-    el.innerHTML=modeCard('users',t('withFriends'),t('createRoom')+' / '+t('joinRoom'),"teamMode='friends';teamState='friendsMenu';renderTeamContent()")
-      +modeCard('globe',t('withStrangers'),lockedS?t('strangersLocked'):t('startBattle'),lockedS?'':"teamMode='strangers';currentRoomId=null;currentRoomName=null;teamState='lobby';renderTeamContent()",lockedS?'locked':'');
-  } else if(teamState==='friendsMenu'){
-    el.innerHTML=modeCard('plus',t('createRoom'),'',"teamState='create';renderTeamContent()")+modeCard('lock',t('joinRoom'),'',"teamState='join';renderTeamContent()")+`<div class="note">${t('localOnlyNote')}</div>`;
+    el.innerHTML=modeCard('plus',t('createRoom'),t('createRoomSub'),"teamState='create';renderTeamContent()")
+      +modeCard('lock',t('joinRoom'),t('joinRoomSub'),"teamState='join';renderTeamContent()")
+      +modeCard('globe',t('withStrangers'),lockedS?t('strangersLocked'):t('strangersSub'),lockedS?'':"teamState='strangers';renderTeamContent()",lockedS?'locked':'');
   } else if(teamState==='create'){
     el.innerHTML=`<div class="stack" style="max-width:none"><input class="field" id="roomNameInput" maxlength="30" placeholder="${t('roomName')}">
-      <input class="field" id="roomPassInput" maxlength="30" placeholder="${t('roomPassOpt')}"><button class="btn primary" onclick="createRoom()">${t('createRoom')}</button></div>`;
+      <input class="field" id="roomPassInput" maxlength="30" placeholder="${t('roomPassOpt')}">
+      <select class="field" id="roomSubj">${subjOptions(teamSubj)}</select>
+      <div class="err" id="createErr"></div><button class="btn primary" onclick="createRoomOnline()">${t('createRoom')}</button></div>`;
   } else if(teamState==='join'){
-    el.innerHTML=`<div class="stack" style="max-width:none"><input class="field" id="roomIdInput" maxlength="12" inputmode="numeric" placeholder="${t('roomIdLbl')}" oninput="this.value=this.value.replace(/\\D/g,'')">
-      <div class="err" id="joinErr"></div><button class="btn primary" onclick="findRoom()">${t('findRoom')}</button></div>`;
-  } else if(teamState==='lobby') renderLobby(el);
+    el.innerHTML=`<div class="stack" style="max-width:none"><input class="field" id="roomIdInput" maxlength="12" inputmode="numeric" placeholder="${t('roomIdLbl')}" oninput="this.value=this.value.replace(/\D/g,'')">
+      <input class="field" id="roomJoinPass" maxlength="30" placeholder="${t('roomPassOpt')}">
+      <div class="err" id="joinErr"></div><button class="btn primary" onclick="joinRoomOnline()">${t('findRoom')}</button></div>`;
+  } else if(teamState==='strangers'){
+    el.innerHTML=`<div class="stack" style="max-width:none"><div class="muted small">${t('pickSubjectTeam')}</div><select class="field" id="pubSubj">${subjOptions(teamSubj)}</select>
+      <div class="err" id="pubErr"></div><button class="btn primary" onclick="playStrangers()">${t('findTeam')}</button></div>`;
+  } else if(teamState==='lobby') renderLobby();
 }
-function createRoom(){
-  const name=($('roomNameInput').value.trim()||t('defaultRoomName')), pass=$('roomPassInput').value.trim();
-  const rooms=Store.getRooms(); let id; do { id=genRoomId12(); } while(rooms[id]);
-  rooms[id]={name,pass,hostId:profile.id,ts:Date.now()}; Store.saveRooms(rooms);
-  currentRoomId=id; currentRoomName=name; teamMode='friends'; alert(t('roomCreated')+id); teamState='lobby'; renderTeamContent();
+async function createRoomOnline(isPublic,subj){
+  const err=$('createErr')||$('pubErr');
+  const name=isPublic?t('publicRoom'):($('roomNameInput').value.trim()||t('defaultRoomName'));
+  const pass=isPublic?'':$('roomPassInput').value.trim();
+  subj=subj||$('roomSubj').value; teamSubj=subj;
+  let id; for(let i=0;i<5;i++){ id=genRoomId12(); if(!(await Cloud.getRoom(id))) break; }
+  try{ await Cloud.createRoom(id,{name,pass,subj,isPublic,myName:profile.name+' '+profile.surname}); }
+  catch(e){ if(err) err.textContent=cloudErrText(e); return; }
+  enterRoom(id,true);
 }
-function findRoom(){
-  const id=$('roomIdInput').value.trim(), errEl=$('joinErr');
-  if(id.length!==12){ errEl.textContent=t('roomIdLen'); return; }
-  const room=Store.getRooms()[id]; if(!room){ errEl.textContent=t('roomNotFound'); return; }
-  if(room.pass){ const p=prompt(t('enterPassword')); if(p===null) return; if(p!==room.pass){ errEl.textContent=t('wrongPass'); return; } }
-  currentRoomId=id; currentRoomName=room.name; teamMode='friends'; alert(t('joinedRoom')); teamState='lobby'; renderTeamContent();
+async function joinRoomOnline(id,pass,silent){
+  const err=$('joinErr')||$('pubErr');
+  id=id||$('roomIdInput').value.trim(); pass=pass!==undefined?pass:($('roomJoinPass')?$('roomJoinPass').value:'');
+  if(id.length!==12){ if(err) err.textContent=t('roomIdLen'); return false; }
+  const r=await Cloud.getRoom(id);
+  if(!r || r.status==='closed'){ if(err) err.textContent=t('roomNotFound'); return false; }
+  if(r.status!=='lobby'){ if(err) err.textContent=t('roomStarted'); return false; }
+  const ps=r.players||{}, n=Object.keys(ps).length;
+  if(!ps[profile.uid] && n>=8){ if(err) err.textContent=t('roomFull'); return false; }
+  if(!(await Cloud.checkRoomPass(r,pass))){ if(err) err.textContent=t('wrongPass'); return false; }
+  if(!ps[profile.uid]){
+    const a=Object.values(ps).filter(p=>p.team==='A').length, b=n-a;
+    try{ await Cloud.joinRoom(id,profile.name+' '+profile.surname,a<=b?'A':'B'); }catch(e){ if(err) err.textContent=cloudErrText(e); return false; }
+  }
+  enterRoom(id,r.host===profile.uid); return true;
 }
-function renderLobby(el){
-  const opts=subjects.map(s=>`<option value="${s.k}">${esc(s.name)}</option>`).join('')+`<option value="logic">${t('logicTag')}</option>`;
-  const info = teamMode==='friends' ? `<div class="note" style="padding:0 0 8px">${t('roomIdLbl')}: <b>${esc(currentRoomId||'—')}</b>${currentRoomName?(' · '+esc(currentRoomName)):''}</div>` : '';
-  // PLACEHOLDER: real voice chat needs a WebRTC provider + signaling server.
-  el.innerHTML=`${info}<div class="stack" style="max-width:none"><div class="muted small">${t('pickSubjectTeam')}</div>
-    <select id="teamSubjSelect" class="field">${opts}</select><div class="muted small">${t('teamRulesNote')}</div>
-    <button class="btn primary" onclick="beginTeamMatch($('teamSubjSelect').value)">${t('startBattle')}</button></div>
+async function playStrangers(){
+  const subj=$('pubSubj').value; teamSubj=subj; $('pubErr').textContent='…';
+  try{ const r=await Cloud.findPublicRoom(subj); if(r && await joinRoomOnline(r.id,'',true)) return; await createRoomOnline(true,subj); }
+  catch(e){ $('pubErr').textContent=cloudErrText(e); }
+}
+function enterRoom(id,isHost){
+  if(room && room.unsub) room.unsub();
+  room={id,isHost,data:null,started:false,finished:false,applied:false,created:Date.now()};
+  teamState='lobby'; renderTeamContent();
+  room.unsub=Cloud.watchRoom(id,onRoomUpdate);
+}
+function onRoomUpdate(r){
+  if(!room) return;
+  if(!r || r.status==='closed'){ if(!room.started){ toast(t('roomClosed')); closeRoomState(); teamState='hub'; renderTeamContent(); } return; }
+  room.data=r; teamMode=r.public?'strangers':'friends';
+  if(r.status==='playing' && !room.started && r.qs && r.qs.length){ room.started=true; beginTeamMatch(r.subj,r.qs.map(x=>({id:x.id,q:x.q,o:x.o.slice(),c:x.c}))); return; }
+  if(room.started && room.finished) renderTeamResult();
+  if(!room.started && $('teamBattle').classList.contains('active') && teamState==='lobby') renderLobby();
+}
+function renderLobby(){
+  const el=$('teamContent'); if(!el||!room) return;
+  const r=room.data; if(!r){ el.innerHTML='<div class="note">…</div>'; return; }
+  const ps=Object.entries(r.players||{}).map(([uid,p])=>Object.assign({uid},p));
+  const team=k=>{ const list=ps.filter(p=>p.team===k); let h=list.map(p=>`<div class="seat${p.uid===profile.uid?' me':''}"><div class="av sm">${initials(p.name.split(' ')[0],p.name.split(' ')[1])}</div><span>${esc(p.name)}${p.uid===r.host?' · '+t('hostLbl'):''}</span></div>`).join('');
+    for(let i=list.length;i<4;i++) h+=`<div class="seat empty"><div class="av sm">${icon('bot',16)}</div><span>${t('emptySlotAI')}</span></div>`; return h; };
+  const mine=(r.players[profile.uid]||{}).team;
+  const autoLeft = r.public ? Math.max(0,45-Math.floor((Date.now()-room.created)/1000)) : null;
+  el.innerHTML=`<div class="card" style="padding:14px;margin-bottom:12px">
+      <div class="muted small">${esc(r.name)}${r.passHash?' · '+t('withPass'):''}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:4px"><b style="font-size:18px;letter-spacing:.06em">${r.id}</b>
+      <button class="pill soft" onclick="copyId('${r.id}')">${icon('copy',14)}</button><button class="pill soft" onclick="shareRoom()">${icon('share',14)}</button></div>
+      <div class="muted small" style="margin-top:6px">${t('pickSubjectTeam')}: <b style="color:var(--text)">${esc(subjName(r.subj))}</b></div></div>
+    <div class="teams"><div><div class="teamhead A">${t('teamA')} · ${ps.filter(p=>p.team==='A').length}/4</div>${team('A')}</div>
+      <div><div class="teamhead B">${t('teamB')} · ${ps.filter(p=>p.team==='B').length}/4</div>${team('B')}</div></div>
+    <div class="stack" style="max-width:none;margin-top:12px">
+      <button class="btn outline" onclick="switchTeam()">${t('switchTeam')} → ${mine==='A'?t('teamB'):t('teamA')}</button>
+      ${room.isHost?`<select class="field" onchange="hostSetSubj(this.value)">${subjOptions(r.subj)}</select>
+        <button class="btn primary" onclick="hostStart()">${t('startBattle')}${autoLeft!==null?' ('+autoLeft+')':''}</button>`
+        :`<div class="note" style="text-align:center">${t('waitHost')}</div>`}
+      <button class="btn ghost" onclick="leaveRoomNow()">${t('exitRoom')}</button></div>
     <button class="micBtn" title="${t('micLabel')}" onclick="toast(t('micLabel'))">${icon('mic',22)}</button>`;
+  // public rooms start by themselves after 45 s so strangers never wait forever
+  clearTimeout(renderLobby._t);
+  if(room.isHost && r.public && !room.started){ if(autoLeft<=0) hostStart(); else renderLobby._t=setTimeout(renderLobby,1000); }
 }
-function beginTeamMatch(key){
+function shareRoom(){ const txt=t('roomInvite')+' '+room.id+'\n'+location.href.split('?')[0]; if(navigator.share) navigator.share({title:'DUELUM 4v4',text:txt}).catch(()=>{}); else copyId(txt); }
+async function switchTeam(){ const me=room.data.players[profile.uid]; if(!me) return; const to=me.team==='A'?'B':'A';
+  if(Object.values(room.data.players).filter(p=>p.team===to).length>=4){ toast(t('teamFull')); return; } try{ await Cloud.setTeam(room.id,to); }catch(e){ toast(cloudErrText(e)); } }
+function hostSetSubj(v){ teamSubj=v; firebase.firestore().collection('rooms').doc(room.id).update({subj:v}).catch(()=>{}); }
+async function hostStart(){
+  if(!room||!room.isHost||room.started) return;
+  const subj=room.data.subj; curSubj=subj;
+  const qs=buildMatchQuestions(subj,ROUND_LIMIT_TEAM).map(q=>({id:q.id,q:q.q,o:q.o,c:q.c}));
+  try{ await Cloud.startRoom(room.id,subj,qs); }catch(e){ toast(cloudErrText(e)); }
+}
+function leaveRoomNow(){ if(room){ Cloud.leaveRoom(room.id,room.isHost); closeRoomState(); } teamState='hub'; renderTeamContent(); }
+function closeRoomState(){ clearTimeout(renderLobby._t); if(room && room.unsub) room.unsub(); room=null; }
+function beginTeamMatch(key,qs){
   isTeam=true; curSubj=key; isLogic=(key==='logic'); qi=0; teamYouCorrect=0; teamYouWrong=0;
-  matchQs=buildMatchQuestions(key,ROUND_LIMIT_TEAM); resetHelpers();
+  matchQs=qs||buildMatchQuestions(key,ROUND_LIMIT_TEAM); resetHelpers();
   document.querySelector('.vsrow').style.display='none'; document.querySelector('.bar').style.display='none';
   $('stickerRow').innerHTML=''; go('duel'); matchToken++; loadQ();
+}
+function teamTotals(r){
+  const ps=Object.entries(r.players||{}).map(([uid,p])=>Object.assign({uid},p)), tot={A:0,B:0}, cnt={A:0,B:0};
+  ps.forEach(p=>{ tot[p.team]+=p.correct||0; cnt[p.team]++; });
+  const n=(r.qs||[]).length||ROUND_LIMIT_TEAM;
+  ['A','B'].forEach(k=>{ for(let i=cnt[k];i<4;i++){ const rnd=seededRand(r.id+k+i); let c=0; for(let j=0;j<n;j++) if(rnd()<0.5) c++; tot[k]+=c; } });
+  return {tot,ps,allDone:ps.every(p=>p.done)};
+}
+function renderTeamResult(){
+  if(!room||!room.data) return;
+  const r=room.data, {tot,ps,allDone}=teamTotals(r), me=(r.players[profile.uid]||{}).team||'A', other=me==='A'?'B':'A';
+  const waiting=!allDone && Date.now()-room.finishedAt<60000;
+  if(waiting){ clearTimeout(renderTeamResult._t); renderTeamResult._t=setTimeout(renderTeamResult,3000); }
+  const won=tot[me]>tot[other], prevLeague=leagueIdx(myScore());
+  let d=room.delta||0;
+  if(!waiting && !room.applied){ room.applied=true; d=room.delta=applyTeamResult(won,false); }
+  $('resultCard').innerHTML=`<h2>${waiting?t('waitingTeam'):(won?t('teamWon'):(tot[me]===tot[other]?t('draw'):t('teamLost')))}</h2>
+    <div class="big" style="font-size:24px">${tot[me]} : ${tot[other]}</div><div class="muted small">${t('yourTeamScoreLbl')} — ${t('oppTeamScoreLbl')}</div>
+    <div class="reslist">${ps.sort((a,b)=>(b.correct||0)-(a.correct||0)).map(p=>`<div><span class="tdot ${p.team}"></span>${esc(p.name)}<b>${p.correct||0}${p.done?'':'…'}</b></div>`).join('')}</div>
+    ${waiting?'':deltaLine(d)+resultFooter(prevLeague)}`;
+  $('resultOverlay').classList.add('on');
 }
 
 /* ---------- menu, bell ---------- */
@@ -738,6 +914,7 @@ function startCloud(){
     updateFriendsBadge(); if($('friends').classList.contains('active')) renderFriends();
   });
   startChatsWatch();
+  Cloud.listFollowing(profile.uid).then(ids=>{ myFollowing=new Set(ids); }).catch(()=>{});
   unsubIncoming=Cloud.watchIncoming(list=>{
     incomingCh=list; updateFriendsBadge();
     if(shownChallengeId && !list.some(c=>c.id===shownChallengeId)) closeModal();
@@ -837,7 +1014,7 @@ function onChallengeUpdate(ch){
 function stopPvp(){ if(pvp && pvp.unsub) pvp.unsub(); pvp=null; }
 
 /* ---------- direct messages (Instagram-style) ---------- */
-let chatsState=[], unsubChats=null, chatCid=null, chatOther=null, unsubMsgs=null;
+let chatsState=[], unsubChats=null, chatCid=null, chatOther=null, unsubMsgs=null, lastChatOther=null;
 function startChatsWatch(){
   if(unsubChats) unsubChats();
   unsubChats=Cloud.watchChats(async list=>{
@@ -875,7 +1052,7 @@ async function openChatWith(other){
   let cid;
   try{ cid=await Cloud.ensureChat(other); }
   catch(e){ console.warn(e); toast(e&&e.code==='permission-denied'?t('chatNeedFollow'):cloudErrText(e)); return; }
-  stopChat(); chatCid=cid; chatOther=other;
+  stopChat(); chatCid=cid; chatOther=other; lastChatOther=other;
   $('chatName').textContent=u?u.name+' '+u.surname:''; $('chatSub').textContent=u?'ID '+u.id:''; $('chatAv').innerHTML=avatarHtml(u);
   $('msgList').innerHTML='<div class="note">…</div>'; $('msgInput').value='';
   go('chat');
@@ -889,20 +1066,72 @@ function renderMsgs(list){
   list.forEach(m=>{
     const day=m.at?new Date(m.at).toDateString():'';
     if(day && day!==lastDay){ h+=`<div class="msgday">${new Date(m.at).toLocaleDateString()}</div>`; lastDay=day; }
-    h+=`<div class="msg ${m.from===me?'me':'them'}${m.pending?' pending':''}">${esc(m.text)}<span class="msgtime">${m.at?new Date(m.at).toTimeString().slice(0,5):''}</span></div>`;
+    const tm=`<span class="msgtime">${m.at?new Date(m.at).toTimeString().slice(0,5):''}</span>`, side=m.from===me?'me':'them', pend=m.pending?' pending':'';
+    if(m.type==='image' && m.media) h+=`<div class="msg media ${side}${pend}"><img src="${esc(m.media)}" alt="" onclick="viewImage(this.src)">${tm}</div>`;
+    else if(m.type==='voice' && m.media) h+=`<div class="msg ${side}${pend} voice">${icon('mic',16)}<audio controls preload="none" src="${esc(m.media)}"></audio>${tm}</div>`;
+    else if(m.type==='file' && m.media) h+=`<div class="msg ${side}${pend}"><a class="filemsg" href="${esc(m.media)}" download="${esc(m.name||'file')}">${icon('copy',18)}<span><b>${esc(m.name||'file')}</b><small>${fmtSize(m.size)}</small></span></a>${tm}</div>`;
+    else h+=`<div class="msg ${side}${pend}">${esc(m.text)}${tm}</div>`;
   });
   box.innerHTML=h;
   if(atBottom || list.length && list[list.length-1].from===me) box.scrollTop=box.scrollHeight;
   if(chatCid) Cloud.markRead(chatCid);
 }
+const MAX_MEDIA=700*1024;
+const fmtSize=n=>!n?'':n<1024?n+' B':n<1048576?Math.round(n/1024)+' KB':(n/1048576).toFixed(1)+' MB';
+function fileToDataURL(f){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(f); }); }
+async function compressImage(f){
+  const url=await fileToDataURL(f), img=new Image(); img.src=url; await img.decode();
+  for(const [max,q] of [[1280,.8],[1024,.72],[800,.65],[640,.6]]){
+    const k=Math.min(1,max/Math.max(img.width,img.height)), c=document.createElement('canvas');
+    c.width=Math.round(img.width*k); c.height=Math.round(img.height*k); c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+    const out=c.toDataURL('image/jpeg',q); if(out.length*0.75<MAX_MEDIA) return out;
+  }
+  throw new Error('too-big');
+}
+function pickAttachment(){ $('attachInput').click(); }
+async function onAttach(input){
+  const f=input.files[0]; input.value=''; if(!f||!chatCid) return;
+  try{
+    if(f.type.startsWith('image/')){ toast(t('sending')); const data=await compressImage(f); await Cloud.sendMessage(chatCid,{type:'image',media:data},t('photoMsg')); }
+    else{
+      if(f.size>MAX_MEDIA){ toast(t('fileTooBig')); return; }
+      toast(t('sending')); const data=await fileToDataURL(f);
+      await Cloud.sendMessage(chatCid,{type:'file',media:data,name:f.name.slice(0,80),size:f.size},t('fileMsg')+' '+f.name.slice(0,40));
+    }
+  }catch(e){ console.warn(e); toast(e.message==='too-big'?t('fileTooBig'):(e.code==='permission-denied'?t('chatNeedFollow'):cloudErrText(e))); }
+}
+// Voice messages (MediaRecorder; up to 60 s so the recording fits in one document)
+let rec=null;
+async function toggleRecord(){
+  if(rec){ stopRecord(true); return; }
+  if(!navigator.mediaDevices || !window.MediaRecorder){ toast(t('micUnsupported')); return; }
+  let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }catch(e){ toast(t('micDenied')); return; }
+  const mime=['audio/webm;codecs=opus','audio/mp4','audio/ogg;codecs=opus','audio/webm'].find(m=>MediaRecorder.isTypeSupported(m))||'';
+  const mr=new MediaRecorder(stream,mime?{mimeType:mime,audioBitsPerSecond:24000}:{audioBitsPerSecond:24000}), chunks=[];
+  rec={mr,stream,chunks,start:Date.now(),send:true};
+  mr.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+  mr.onstop=async()=>{
+    stream.getTracks().forEach(t=>t.stop());
+    const r=rec; rec=null; renderRecBar(); if(!r.send||!chatCid) return;
+    const blob=new Blob(chunks,{type:mr.mimeType||'audio/webm'}), dur=Math.round((Date.now()-r.start)/1000);
+    if(dur<1) return; if(blob.size>MAX_MEDIA){ toast(t('fileTooBig')); return; }
+    try{ await Cloud.sendMessage(chatCid,{type:'voice',media:await fileToDataURL(blob),dur},t('voiceMsg')+' '+dur+'s'); }
+    catch(e){ toast(e.code==='permission-denied'?t('chatNeedFollow'):cloudErrText(e)); }
+  };
+  mr.start(250); renderRecBar();
+  rec.timer=setInterval(()=>{ if(!rec) return; const sec=Math.floor((Date.now()-rec.start)/1000); $('recTime').textContent='0:'+String(sec).padStart(2,'0'); if(sec>=60) stopRecord(true); },250);
+}
+function stopRecord(send){ if(!rec) return; rec.send=send; clearInterval(rec.timer); try{ rec.mr.stop(); }catch(e){ rec=null; renderRecBar(); } }
+function renderRecBar(){ $('recBar').style.display=rec?'flex':'none'; $('msgForm').style.display=rec?'none':'flex'; if(rec) $('recTime').textContent='0:00'; }
+function viewImage(src){ openModal(`<img src="${src}" style="max-width:100%;border-radius:12px"><button class="btn ghost" onclick="closeModal()">${t('cancel')}</button>`); }
 async function sendMsg(){
   const inp=$('msgInput'), text=inp.value.trim(); if(!text||!chatCid) return;
   inp.value='';
   try{ await Cloud.sendMessage(chatCid,text); }catch(e){ console.warn(e); toast(e&&e.code==='permission-denied'?t('chatNeedFollow'):cloudErrText(e)); inp.value=text; }
   const box=$('msgList'); box.scrollTop=box.scrollHeight;
 }
-function stopChat(){ if(unsubMsgs) unsubMsgs(); unsubMsgs=null; if(chatCid){ chatCid=null; updateChatBadge(); } }
-function closeChat(){ go('chats'); }
+function stopChat(){ if(rec) stopRecord(false); if(unsubMsgs) unsubMsgs(); unsubMsgs=null; if(chatCid){ chatCid=null; updateChatBadge(); } }
+function closeChat(){ lastChatOther=null; go('chats'); }
 function chatOpenProfile(){ if(chatOther) openUser(chatOther); }
 
 /* ---------- swipe ---------- */
