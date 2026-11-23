@@ -32,7 +32,13 @@ const Cloud = (function(){
   let auth=null, db=null, FV=null, uid=null, unsubMe=null, onProfileCb=null, current=null;
   const userCache={}; // uid -> {data, ts}
 
+  // Any network step that hangs (slow mobile data, a flaky first connection)
+  // is cut off after `ms` so the app can show "Retry" instead of spinning forever.
+  function withTimeout(p,ms){
+    return Promise.race([p, new Promise((_,rej)=>setTimeout(()=>rej(Object.assign(new Error('timeout'),{code:'auth/network-request-failed'})),ms))]);
+  }
   function loadScript(src){
+    if(document.querySelector('script[src="'+src+'"]') && window.firebase) return Promise.resolve();
     return new Promise((res,rej)=>{
       const s=document.createElement('script'); s.src=src; s.onload=res;
       s.onerror=()=>rej(new Error('sdk-load-failed')); document.head.appendChild(s);
@@ -41,11 +47,14 @@ const Cloud = (function(){
   async function init(){
     if(!enabled) return false;
     if(db) return true;
-    await loadScript(FIREBASE_SDK+'firebase-app-compat.js');
-    await loadScript(FIREBASE_SDK+'firebase-auth-compat.js');
-    await loadScript(FIREBASE_SDK+'firebase-firestore-compat.js');
-    firebase.initializeApp(FIREBASE_CONFIG);
-    auth=firebase.auth(); db=firebase.firestore(); FV=firebase.firestore.FieldValue;
+    await withTimeout(loadScript(FIREBASE_SDK+'firebase-app-compat.js'),20000);
+    await withTimeout(loadScript(FIREBASE_SDK+'firebase-auth-compat.js'),20000);
+    await withTimeout(loadScript(FIREBASE_SDK+'firebase-firestore-compat.js'),20000);
+    if(!(firebase.apps||[]).length) firebase.initializeApp(FIREBASE_CONFIG);
+    auth=firebase.auth(); db=firebase.firestore();
+    // Falls back to long-polling on networks/proxies where Firestore's streaming connection stalls.
+    try{ db.settings({experimentalAutoDetectLongPolling:true, merge:true}); }catch(e){}
+    FV=firebase.firestore.FieldValue;
     return true;
   }
 
@@ -96,9 +105,12 @@ const Cloud = (function(){
     // Resolves with the signed-in profile, or null.
     async restore(){
       await init();
-      const user=await new Promise(res=>{ const u=auth.onAuthStateChanged(x=>{ u(); res(x); }); });
+      const user=await withTimeout(new Promise(res=>{
+        let unsub=null, done=false;
+        unsub=auth.onAuthStateChanged(x=>{ if(done) return; done=true; res(x); if(unsub) unsub(); else setTimeout(()=>unsub&&unsub(),0); });
+      }),15000);
       if(!user) return null;
-      uid=user.uid; return await loadMe();
+      uid=user.uid; return await withTimeout(loadMe(),15000);
     },
     async register({name,surname,digits,pass}){
       await init();

@@ -1078,7 +1078,13 @@ function boot(){
   if(!Cloud.enabled){ profile=Store.getProfile(); afterAuth(); return; }
   // ONLINE mode: wait for Firebase to restore the saved login.
   $('bootMsg').textContent=t('bootLoading'); $('bootRetry').style.display='none'; go('boot');
-  Cloud.restore().then(p=>{ profile=p; if(p) startCloud(); afterAuth(); })
-    .catch(e=>{ console.warn(e); $('bootMsg').textContent=cloudErrText(e); $('bootRetry').style.display=''; });
+  // One automatic retry first (the very first connection is sometimes slow), then a Retry button.
+  const attempt=(n)=>Cloud.restore().then(p=>{ profile=p; if(p) startCloud(); afterAuth(); })
+    .catch(e=>{
+      console.warn('[boot]',e);
+      if(n<1){ $('bootMsg').textContent=t('bootLoading'); return attempt(n+1); }
+      $('bootMsg').textContent=cloudErrText(e); $('bootRetry').style.display='';
+    });
+  attempt(0);
 }
 boot();
