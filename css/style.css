@@ -358,3 +358,7 @@ button:focus-visible,a:focus-visible,.opt:focus-visible{outline:2px solid var(--
 .reslist b{margin-left:auto;} .tdot{width:9px;height:9px;border-radius:50%;} .tdot.A{background:var(--accent);} .tdot.B{background:#f97316;}
 .msgbar input{min-width:0;}
 .msgbar .roundbtn{width:36px;height:36px;}
+#stickerToast{text-align:center;} #stickerToast.opp{color:#f97316;}
+.stkname{font-size:15px;font-weight:750;margin-top:4px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:3px 10px;display:inline-block;}
+.bellitem.new{background:var(--accentSoft);border-radius:12px;padding-left:8px;padding-right:8px;}
+.bellitem .av{width:42px;height:42px;}

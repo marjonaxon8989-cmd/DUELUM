@@ -263,6 +263,12 @@ const Cloud = (function(){
     markRead(cid){ const u={}; u['readAt.'+uid]=FV.serverTimestamp(); return db.collection('chats').doc(cid).update(u).catch(()=>{}); },
 
     /* ----- follower / following lists ----- */
+    // live list of who follows me: [{from, at(ms)}] newest first
+    watchFollowers(cb){
+      return db.collection('follows').where('to','==',uid).limit(200).onSnapshot(q=>{
+        cb(q.docs.map(d=>{ const x=d.data({serverTimestamps:'estimate'}); return {from:x.from,at:ms(x.createdAt)}; }).sort((a,b)=>b.at-a.at));
+      },e=>console.warn('[Cloud] followers',e));
+    },
     async listFollowers(of){ const q=await db.collection('follows').where('to','==',of).limit(300).get(); return q.docs.map(d=>d.data().from); },
     async listFollowing(of){ const q=await db.collection('follows').where('from','==',of).limit(300).get(); return q.docs.map(d=>d.data().to); },
     async getUsers(ids){ const out=[]; await Promise.all(ids.map(async id=>{ try{ const u=await this.getUser(id); if(u) out.push(u); }catch(e){} })); return out; },
@@ -270,9 +276,11 @@ const Cloud = (function(){
     /* ----- random-opponent matchmaking (same subject, anywhere in the world) ----- */
     // Only the player with the SMALLER uid claims the other one, so two waiting
     // players can never create two matches for each other at the same moment.
-    async findOpponent(subj,myName,qs){
+    // `refTs` = server time of MY queue entry; freshness is judged against it, never
+    // against this phone's clock (phones' clocks can be minutes off).
+    async findOpponent(subj,myName,qs,refTs){
       const q=await db.collection('queue').where('subj','==',subj).where('status','==','waiting').limit(20).get();
-      const cands=q.docs.filter(d=>d.id!==uid && d.id>uid && Date.now()-ms(d.data().ts)<25000);
+      const cands=q.docs.filter(d=>{ if(d.id===uid || d.id<uid) return false; const t=d.data().ts; return refTs && t && t.toMillis ? Math.abs(t.toMillis()-refTs)<30000 : false; });
       for(const d of cands){
         try{
           const res=await db.runTransaction(async tx=>{
@@ -291,7 +299,12 @@ const Cloud = (function(){
       }
       return null;
     },
-    enqueue(subj,name){ return db.collection('queue').doc(uid).set({subj,name,status:'waiting',ts:FV.serverTimestamp(),matchId:null,matchedBy:null}); },
+    // returns the server time of the new queue entry (ms)
+    async enqueue(subj,name){
+      const ref=db.collection('queue').doc(uid);
+      await ref.set({subj,name,status:'waiting',ts:FV.serverTimestamp(),matchId:null,matchedBy:null});
+      const s=await ref.get(); const t=s.exists&&s.data().ts; return t&&t.toMillis?t.toMillis():null;
+    },
     watchQueue(cb){ return db.collection('queue').doc(uid).onSnapshot(s=>cb(s.exists?s.data():null),()=>{}); },
     // Leave the queue unless someone already matched us (then returns their match).
     async leaveQueue(){
@@ -374,10 +387,11 @@ const Cloud = (function(){
       return ref.id;
     },
     watchChallenge(id,cb){ return db.collection('challenges').doc(id).onSnapshot(s=>{ if(s.exists) cb(Object.assign({id:s.id},s.data())); },()=>{}); },
-    // pending challenges sent TO me, newer than 60 s (the sender stops waiting after 60 s)
+    // pending challenges sent TO me
     watchIncoming(cb){
       return db.collection('challenges').where('to','==',uid).where('status','==','pending').onSnapshot(q=>{
-        cb(q.docs.map(d=>Object.assign({id:d.id},d.data())).filter(c=>Date.now()-ms(c.createdAt)<60000));
+        // the sender cancels after 60 s; the 3-minute window only hides very old leftovers (and tolerates clock differences)
+        cb(q.docs.map(d=>Object.assign({id:d.id},d.data())).filter(c=>Math.abs(Date.now()-ms(c.createdAt))<180000));
       },e=>console.warn('[Cloud] incoming',e));
     },
     respondChallenge(id,accept){ return db.collection('challenges').doc(id).update({status:accept?'accepted':'declined'}); },

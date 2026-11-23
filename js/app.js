@@ -149,12 +149,14 @@ function startSearch(key){
 async function startMatchmaking(key){
   mmActive=true; curSubj=key;
   const myName=profile.name+' '+profile.surname, seed=makeSeed(key,ROUND_LIMIT_1V1);
+  let refTs=null;
   const tryClaim=async()=>{
-    if(!mmActive) return;
-    try{ const r=await Cloud.findOpponent(key,myName,seed); if(r && mmActive){ await stopMatchmaking(false); startRandomPvp(r.cid,r.other,r.otherName,key,seed,'from'); } }catch(e){ console.warn('[mm]',e); }
+    if(!mmActive || !refTs) return;
+    try{ const r=await Cloud.findOpponent(key,myName,seed,refTs); if(r && mmActive){ await stopMatchmaking(false); startRandomPvp(r.cid,r.other,r.otherName,key,seed,'from'); } }catch(e){ console.warn('[mm]',e); }
   };
-  await tryClaim(); if(!mmActive) return;
-  try{ await Cloud.enqueue(key,myName); }catch(e){ console.warn('[mm] enqueue',e); return; }
+  try{ refTs=await Cloud.enqueue(key,myName); }catch(e){ console.warn('[mm] enqueue',e); return; }
+  if(!mmActive){ Cloud.leaveQueue(); return; }
+  tryClaim();
   mmUnsub=Cloud.watchQueue(q=>{ if(mmActive && q && q.status==='matched' && q.matchId){ stopMatchmaking(false); Cloud.leaveQueue(); joinRandomMatch(q.matchId); } });
   mmPoll=setInterval(tryClaim,3000);
 }
@@ -212,7 +214,7 @@ function beginDuel(key,presetQs){
   setAv($('meAv'),profile);
   meScore=0; aiScore=0; updateScores(); resetHelpers();
   document.querySelector('.vsrow').style.display='flex'; document.querySelector('.bar').style.display='flex';
-  $('stickerRow').innerHTML = isLogic ? '' : STICKERS.map(s=>`<button onclick="sendSticker('${s}')">${icon(s,22)}</button>`).join('');
+  $('stickerRow').innerHTML = (isLogic && !pvp) ? '' : STICKERS.map(s=>`<button onclick="sendSticker('${s}')">${icon(s,22)}</button>`).join('');
   go('duel'); matchToken++; loadQ();
 }
 function roundLimit(){ return isTeam?ROUND_LIMIT_TEAM:ROUND_LIMIT_1V1; }
@@ -281,12 +283,16 @@ function leaveGame(){
   else { addScore(-10); go('home'); }
   renderRating();
 }
+// Stickers: shown big for you, and (online duels) sent to the opponent, who sees
+// them with your name. Works in friend duels, random duels and logic duels.
 function sendSticker(s,fromOpp){
   if(pvp && !fromOpp) Cloud.pvpSticker(pvp.id,s);
   const el=$('stickerToast');
-  el.innerHTML = ICON_PATHS[s] ? icon(s,96) : `<span style="font-size:72px">${esc(s)}</span>`;
+  const who = fromOpp ? (pvp&&pvp.oppName||'') : (pvp ? t('you') : '');
+  el.innerHTML = (ICON_PATHS[s] ? icon(s,96) : `<span style="font-size:72px">${esc(s)}</span>`) + (who?`<div class="stkname">${esc(who)}</div>`:'');
+  el.classList.toggle('opp',!!fromOpp);
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
-  clearTimeout(sendSticker._t); sendSticker._t=setTimeout(()=>el.classList.remove('show'),900);
+  clearTimeout(sendSticker._t); sendSticker._t=setTimeout(()=>el.classList.remove('show'),fromOpp?1600:900);
 }
 
 /* ---------- results ---------- */
@@ -725,17 +731,28 @@ function bellItems(){
   items.push({ic:'bot',col:'#2aabee',title:t('bellBot'),sub:t('bellBotSub'),href:TG.links.bot});
   return items;
 }
-function openBell(){
-  $('bellList').innerHTML=bellItems().map(it=>{
+function openBell(refresh){
+  const seen=Store.getBellSeen();
+  const items=bellItems().map(it=>{
     const inner=`<div class="bi" style="background:${it.col}">${icon(it.ic,20)}</div><div class="bt"><b>${it.title}</b><span>${it.sub}</span></div>${icon('chevron',18)}`;
     return it.href ? `<a class="bellitem" href="${it.href}" target="_blank" rel="noopener">${inner}</a>` : `<div class="bellitem" onclick="${it.on}" style="cursor:pointer">${inner}</div>`;
-  }).join('');
-  $('bellOverlay').classList.add('on'); Store.setBellSeen(Date.now()); updateBellDot();
+  });
+  // who followed me (newest first), with a "follow back" button
+  const fol=followFeed.slice(0,30).map(f=>{ const u=friendUsers[f.from]; if(!u) return '';
+    const isNew=f.at>(refresh?(openBell._seen||seen):seen);
+    return `<div class="bellitem${isNew?' new':''}" onclick="closeBell();openUser('${f.from}')" style="cursor:pointer"><div class="av">${avatarHtml(u)}</div>
+      <div class="bt"><b>${esc(u.name+' '+u.surname)}</b><span>${t('followedYou')} · ${timeShort(f.at)}</span></div>${followPill(f.from)}</div>`; }).join('');
+  $('bellList').innerHTML=(fol?`<div class="secTitle" style="margin:6px 0">${t('newFollowers')}</div>${fol}<div class="secTitle" style="margin:14px 0 6px">${t('notifications')}</div>`:'')+items.join('');
+  if(!refresh){ openBell._seen=seen; $('bellOverlay').classList.add('on'); }
+  // "seen" = now, or the newest follower time if the server clock is ahead of this phone
+  Store.setBellSeen(Math.max(Date.now(), ...followFeed.map(f=>f.at||0))); updateBellDot();
 }
 function closeBell(){ $('bellOverlay').classList.remove('on'); }
 function updateBellDot(){
   const due = Date.now()-Store.getBellSeen()>BELL_EVERY;
-  const pending = incomingCh.length || friendsState.some(f=>f.incoming) || (typeof chatsState!=='undefined' && chatsState.some(c=>c.unread));
+  const seen=Store.getBellSeen();
+  const pending = incomingCh.length || friendsState.some(f=>f.incoming) || (typeof chatsState!=='undefined' && chatsState.some(c=>c.unread))
+    || (typeof followFeed!=='undefined' && followFeed.some(f=>f.at>seen));
   $('bellDot').classList.toggle('on', !!(due||pending));
 }
 setInterval(updateBellDot,60000);
@@ -904,6 +921,7 @@ function calcSign(){ if(calcCur==='Error') return; calcCur=calcCur.startsWith('-
 function calcPercent(){ if(calcCur==='Error') return; calcCur=calcFmt(parseFloat(calcCur)/100); calcResetNext=true; calcRender(); }
 
 /* ---------- ONLINE: friends, requests, friend duels ---------- */
+let followFeed=[], unsubFollowFeed=null;
 let friendsState=[], friendUsers={}, incomingCh=[], unsubFriends=null, unsubIncoming=null, shownChallengeId=null;
 function startCloud(){
   stopCloudWatchers();
@@ -914,6 +932,15 @@ function startCloud(){
     updateFriendsBadge(); if($('friends').classList.contains('active')) renderFriends();
   });
   startChatsWatch();
+  if(unsubFollowFeed) unsubFollowFeed();
+  let feedFirst=true;
+  unsubFollowFeed=Cloud.watchFollowers(async list=>{
+    const fresh = feedFirst ? [] : list.filter(f=>!followFeed.some(o=>o.from===f.from));
+    followFeed=list; feedFirst=false;
+    await Promise.all(list.slice(0,30).filter(f=>!friendUsers[f.from]).map(async f=>{ try{ friendUsers[f.from]=await Cloud.getUser(f.from); }catch(e){} }));
+    fresh.forEach(f=>{ const u=friendUsers[f.from]; if(u) toast(u.name+' '+u.surname+' '+t('followedYou')); });
+    updateBellDot(); if($('bellOverlay').classList.contains('on')) openBell(true);
+  });
   Cloud.listFollowing(profile.uid).then(ids=>{ myFollowing=new Set(ids); }).catch(()=>{});
   unsubIncoming=Cloud.watchIncoming(list=>{
     incomingCh=list; updateFriendsBadge();
@@ -922,7 +949,7 @@ function startCloud(){
     showPendingChallenge();
   });
   clearInterval(startCloud._t); startCloud._t=setInterval(()=>{
-    const before=incomingCh.length; incomingCh=incomingCh.filter(c=>Date.now()-Cloud.ms(c.createdAt)<60000);
+    const before=incomingCh.length; incomingCh=incomingCh.filter(c=>Math.abs(Date.now()-Cloud.ms(c.createdAt))<180000);
     if(shownChallengeId && !incomingCh.some(c=>c.id===shownChallengeId)) closeModal();
     if(before!==incomingCh.length){ updateFriendsBadge(); if($('friends').classList.contains('active')) renderFriends(); }
   },5000);
@@ -931,6 +958,7 @@ function startCloud(){
 function stopCloudWatchers(){
   if(unsubFriends) unsubFriends(); if(unsubIncoming) unsubIncoming();
   if(typeof unsubChats==='function') unsubChats(); unsubChats=null; chatsState=[]; stopChat(); updateChatBadge();
+  if(unsubFollowFeed) unsubFollowFeed(); unsubFollowFeed=null; followFeed=[];
   unsubFriends=unsubIncoming=null; friendsState=[]; incomingCh=[]; clearInterval(startCloud._t); updateFriendsBadge(); closeModal();
 }
 function updateFriendsBadge(){ const n=friendsState.filter(f=>f.incoming).length+incomingCh.length; const b=$('friendsBadge'); b.textContent=n; b.style.display=n?'flex':'none'; updateBellDot(); }
@@ -1008,7 +1036,8 @@ function onChallengeUpdate(ch){
   $('oppName').textContent=pvp.oppName+' · '+pvp.oppAnswered+'/'+ROUND_LIMIT_1V1;
   if(pvp.oppLeft && !wasLeft) toast(pvp.oppName+': '+t('oppLeft'));
   const st=ch.stk&&ch.stk[o];
-  if(st && st.t!==pvp.lastStk){ pvp.lastStk=st.t; if(pvp.state==='playing' && Date.now()-st.t<10000) sendSticker(st.e,true); }
+  if(!pvp.stkInit){ pvp.stkInit=true; pvp.lastStk=st?st.t+':'+st.e:null; }            // ignore stickers from before we joined
+  else if(st && st.t+':'+st.e!==pvp.lastStk){ pvp.lastStk=st.t+':'+st.e; if(pvp.state==='playing') sendSticker(st.e,true); }
   if(pvp.state==='ended' && $('resultOverlay').classList.contains('on')) renderPvpResult();
 }
 function stopPvp(){ if(pvp && pvp.unsub) pvp.unsub(); pvp=null; }
