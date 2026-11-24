@@ -16,6 +16,9 @@
 //   ADMIN_CHAT_ID  your Telegram numeric id (receives the sign-up messages)
 //   CHANNEL        channel username with @, e.g. @duelum (bot must be its ADMIN)
 //   SITE_URL       https://duelum.onrender.com (button in the bot + CORS)
+//   ALERT_EMAIL    (optional) where admin sign-in alerts are e-mailed (default madam1novde@gmail.com)
+//   BREVO_API_KEY  (optional, secret) key from brevo.com (free: 300 e-mails/day) — enables those e-mails
+//   BREVO_SENDER   (optional) a sender address verified in Brevo (default = ALERT_EMAIL)
 // Render sets PORT and RENDER_EXTERNAL_URL automatically; the webhook is
 // registered with Telegram on every start, so nothing else needs configuring.
 
@@ -32,6 +35,20 @@ const PORT = process.env.PORT || 3000;
 const HOOK = TOKEN ? crypto.createHash('sha256').update('hook:' + TOKEN).digest('hex').slice(0, 32) : 'none';
 const CHANNEL_URL = 'https://t.me/' + CHANNEL.replace(/^@/, '');
 let BOT_NAME = '', WEBHOOK_OK = false;
+const ALERT_EMAIL = process.env.ALERT_EMAIL || 'madam1novde@gmail.com';
+const BREVO_KEY = process.env.BREVO_API_KEY || '';
+const BREVO_SENDER = process.env.BREVO_SENDER || ALERT_EMAIL;
+
+// Admin sign-in alerts: Telegram message (needs BOT_TOKEN) + e-mail (needs BREVO_API_KEY).
+async function sendEmail(subject, html) {
+  if (!BREVO_KEY) return false;
+  const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST', headers: { 'api-key': BREVO_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ sender: { name: 'DUELUM', email: BREVO_SENDER }, to: [{ email: ALERT_EMAIL }], subject, htmlContent: html })
+  });
+  if (!r.ok) console.error('brevo', r.status, await r.text().catch(() => ''));
+  return r.ok;
+}
 
 async function tg(method, body) {
   const r = await fetch(`https://api.telegram.org/bot${TOKEN}/${method}`, {
@@ -152,6 +169,21 @@ http.createServer(async (req, res) => {
       // could not check (bot is not a channel admin yet) -> let the user through
       return send(res, 200, { ok: true, subscribed: sub !== false, checked: sub !== null,
         user: { id: auth.id, username: auth.username || '', first_name: auth.first_name || '' } }, origin);
+    }
+
+    if (req.method === 'POST' && req.url === '/api/admin-alert') {
+      if (limited(req)) return send(res, 429, { ok: false }, origin);
+      const b = await readBody(req);
+      const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0];
+      const ok = !!b.ok, when = new Date().toLocaleString('uz-UZ', { timeZone: 'Asia/Tashkent' });
+      const title = ok ? 'Admin panelga KIRILDI' : "Admin panelga kirishga urinish — parol NOTO'G'RI";
+      const lines = [`Vaqt (Toshkent): ${when}`, `IP: ${ip}`, `Qurilma: ${String(b.ua || '').slice(0, 160)}`, `Til: ${String(b.lang || '').slice(0, 20)}`];
+      const tasks = [];
+      if (TOKEN && ADMIN) tasks.push(tg('sendMessage', { chat_id: ADMIN, parse_mode: 'HTML', text: `<b>${escHtml(title)}</b>\n\n${lines.map(escHtml).join('\n')}` }).catch(() => {}));
+      tasks.push(sendEmail('DUELUM: ' + title, `<h2>${escHtml(title)}</h2><p>${lines.map(escHtml).join('<br>')}</p>
+        <p>Agar bu siz bo'lmasangiz, saytda kirish oynasida admin raqamini yozib, "Parolni unutdingizmi?" ni bosing va parolni o'zgartiring.</p>`).catch(() => false));
+      await Promise.all(tasks);
+      return send(res, 200, { ok: true, telegram: !!(TOKEN && ADMIN), email: !!BREVO_KEY }, origin);
     }
 
     if (req.method === 'POST' && req.url === '/api/notify') {

@@ -16,6 +16,12 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function me() { return request.auth.uid; }
+    // The administrator: the account with this Gmail, and only after it is VERIFIED
+    // (keep in sync with js/admin-config.js).
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'madam1novde@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
 
     function validUser(d) {
       return d.name is string && d.name.size() > 0 && d.name.size() <= 40
@@ -34,11 +40,13 @@ service cloud.firestore {
       allow create: if signedIn() && me() == uid && validUser(request.resource.data)
         && request.resource.data.score == 0 && request.resource.data.monthScore == 0
         && request.resource.data.get('followers', 0) == 0
+        && request.resource.data.get('verified', false) == false
         && get(/databases/$(database)/documents/ids/$(request.resource.data.publicId)).data.uid == me();
       // the owner: profile fields and score (plausible change per write); never their own follower count
       allow update: if signedIn() && me() == uid && validUser(request.resource.data)
         && request.resource.data.publicId == resource.data.publicId
         && request.resource.data.get('followers', 0) == resource.data.get('followers', 0)
+        && request.resource.data.get('verified', false) == resource.data.get('verified', false)
         && request.resource.data.score - resource.data.score <= 60
         && request.resource.data.score - resource.data.score >= -60
         && ((request.resource.data.monthKey != resource.data.monthKey
@@ -55,6 +63,17 @@ service cloud.firestore {
                && existsAfter(followDoc(me(), uid)) && !exists(followDoc(me(), uid)))
             || (request.resource.data.followers == resource.data.get('followers', 0) - 1
                && !existsAfter(followDoc(me(), uid)) && exists(followDoc(me(), uid))));
+      // the admin may correct scores and give the verified badge
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // phone number of each user: only the owner and the admin can read it
+    match /private/{uid} {
+      allow read: if signedIn() && (me() == uid || isAdmin());
+      allow create, update: if signedIn() && me() == uid
+        && request.resource.data.keys().hasOnly(['phone', 'updatedAt'])
+        && request.resource.data.phone is string && request.resource.data.phone.size() <= 24;
       allow delete: if false;
     }
 
@@ -71,7 +90,7 @@ service cloud.firestore {
     // the other, or they are friends. Only the two participants can read or write.
     function chatUsers(cid) { return get(/databases/$(database)/documents/chats/$(cid)).data.users; }
     match /chats/{cid} {
-      allow read: if signedIn() && (resource == null || me() in resource.data.users);
+      allow read: if signedIn() && (resource == null || me() in resource.data.users || isAdmin());
       allow create: if signedIn()
         && request.resource.data.users is list && request.resource.data.users.size() == 2
         && me() in request.resource.data.users
@@ -86,7 +105,7 @@ service cloud.firestore {
         && request.resource.data.get('lastText', '').size() <= 120;
       allow delete: if false;
       match /messages/{mid} {
-        allow read: if signedIn() && me() in chatUsers(cid);
+        allow read: if signedIn() && (isAdmin() || me() in chatUsers(cid));
         allow create: if signedIn() && me() in chatUsers(cid)
           && request.resource.data.from == me()
           && ((request.resource.data.get('type', 'text') == 'text'
@@ -143,7 +162,7 @@ service cloud.firestore {
 
     // Doc id = the two uids sorted and joined with "_".
     match /friendships/{fid} {
-      allow read: if signedIn() && (resource == null || me() in resource.data.users);
+      allow read: if signedIn() && (resource == null || me() in resource.data.users || isAdmin());
       allow create: if signedIn()
         && request.resource.data.requester == me()
         && request.resource.data.status == 'pending'
@@ -161,7 +180,7 @@ service cloud.firestore {
 
     match /challenges/{cid} {
       function friendship(pair) { return get(/databases/$(database)/documents/friendships/$(pair)).data; }
-      allow read: if signedIn() && (resource == null || me() == resource.data.from || me() == resource.data.to);
+      allow read: if signedIn() && (resource == null || me() == resource.data.from || me() == resource.data.to || isAdmin());
       function queueAfter(u) { return getAfter(/databases/$(database)/documents/queue/$(u)).data; }
       allow create: if signedIn()
         && request.resource.data.from == me()

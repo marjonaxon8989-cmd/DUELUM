@@ -72,7 +72,8 @@ const Cloud = (function(){
   }
 
   const monthKey = () => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); };
-  const emailOf = digits => digits+'@phone.1v1duel.app';
+  const emailOf = digits => (typeof ADMIN!=='undefined' && digits===ADMIN.phone) ? ADMIN.email : digits+'@phone.1v1duel.app';
+  const isAdminUser = u => !!(u && typeof ADMIN!=='undefined' && u.email===ADMIN.email && u.emailVerified);
   const pairId = (a,b) => [a,b].sort().join('_');
   const ms = ts => ts && ts.toMillis ? ts.toMillis() : Date.now(); // serverTimestamp is null until confirmed
 
@@ -81,10 +82,13 @@ const Cloud = (function(){
     return { uid:id, id:d.publicId, name:d.name||'', surname:d.surname||'', score:d.score||0,
       monthKey:mk, monthScore: d.monthKey===mk ? (d.monthScore||0) : 0,
       avatar:d.avatar||null, premium:d.premium||null, followers:d.followers||0, following:d.following||0,
-      tgUsername:d.tgUsername||'', tgId:d.tgId||null, loggedIn:true };
+      tgUsername:d.tgUsername||'', tgId:d.tgId||null, verified:!!d.verified, hideFollowers:!!d.hideFollowers, loggedIn:true };
   }
   function publicRow(id,d){ const p=toProfile(id,d); return {uid:id,id:p.id,name:p.name,surname:p.surname,score:p.score,monthScore:p.monthScore,
-    avatar:p.avatar,followers:p.followers,following:p.following,tgUsername:p.tgUsername}; }
+    avatar:p.avatar,followers:p.followers,following:p.following,tgUsername:p.tgUsername,verified:p.verified,hideFollowers:p.hideFollowers}; }
+  // everything the admin panel shows about a user (except the password, which nobody can read)
+  function adminRow(id,d){ return Object.assign(publicRow(id,d),{createdAt:ms(d.createdAt),lastSeen:d.lastSeen&&d.lastSeen.toMillis?d.lastSeen.toMillis():0,
+    lastLogin:d.lastLogin&&d.lastLogin.toMillis?d.lastLogin.toMillis():0,logins:d.logins||0,stats:d.stats||{},premium:d.premium||null}); }
   const lower=s=>String(s||'').trim().toLowerCase();
   async function sha256(text){
     const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('duelum:'+text));
@@ -101,18 +105,22 @@ const Cloud = (function(){
       if(!s.exists || !current) return;
       const fresh=toProfile(s.id,s.data());
       Object.assign(current,{score:fresh.score,monthScore:fresh.monthScore,monthKey:fresh.monthKey,avatar:fresh.avatar,premium:fresh.premium,
-        name:fresh.name,surname:fresh.surname,id:fresh.id,followers:fresh.followers,following:fresh.following,tgUsername:fresh.tgUsername,tgId:fresh.tgId});
+        name:fresh.name,surname:fresh.surname,id:fresh.id,followers:fresh.followers,following:fresh.following,tgUsername:fresh.tgUsername,tgId:fresh.tgId,
+        verified:fresh.verified,hideFollowers:fresh.hideFollowers});
       if(onProfileCb) onProfileCb(current);
     },()=>{});
   }
   async function loadMe(){
     const s=await db.collection('users').doc(uid).get();
     if(!s.exists) return null;
-    const d=s.data(); current=toProfile(s.id,d); watchMe();
+    const d=s.data(); current=toProfile(s.id,d); watchMe(); current.isAdmin=isAdminUser(auth.currentUser);
     // older accounts: add the lower-case name fields used by name search
     if(d.nameLower===undefined) db.collection('users').doc(uid).set({nameLower:lower(d.name),surnameLower:lower(d.surname)},{merge:true}).catch(()=>{});
     return current;
   }
+  // private/{uid}: the phone number — readable only by the owner and the admin
+  function savePhone(dial,local){ db.collection('private').doc(uid).set({phone:'+'+dial+' '+local,updatedAt:FV.serverTimestamp()},{merge:true}).catch(()=>{}); }
+  function recordLogin(){ db.collection('users').doc(uid).update({logins:FV.increment(1),lastLogin:FV.serverTimestamp(),lastSeen:FV.serverTimestamp()}).catch(()=>{}); }
   async function allocatePublicId(){
     // ids/{id} can only be CREATED (rules forbid overwrite), so a taken ID fails and we retry.
     for(let i=0;i<8;i++){
@@ -136,7 +144,7 @@ const Cloud = (function(){
         unsub=auth.onAuthStateChanged(x=>{ if(done) return; done=true; res(x); if(unsub) unsub(); else setTimeout(()=>unsub&&unsub(),0); });
       }),15000);
       if(!user) return null;
-      uid=user.uid; return await withTimeout(loadMe(),15000);
+      uid=user.uid; const p=await withTimeout(loadMe(),15000); if(p) recordLogin(); return p;
     },
     async register({name,surname,digits,local,dial,pass,tg}){
       await init();
@@ -146,8 +154,10 @@ const Cloud = (function(){
       const doc={name,surname,nameLower:lower(name),surnameLower:lower(surname),publicId,score:0,monthScore:0,monthKey:monthKey(),
         followers:0,following:0,avatar:null,premium:null,createdAt:FV.serverTimestamp()};
       if(tg){ doc.tgId=tg.id; doc.tgUsername=tg.username||''; }
+      doc.logins=1; doc.lastLogin=FV.serverTimestamp(); doc.lastSeen=FV.serverTimestamp();
       await db.collection('users').doc(uid).set(doc);
-      if(local && dial) rememberDial(local,dial);
+      if(local && dial){ rememberDial(local,dial); savePhone(dial,local); }
+      if(cred.user.email===(typeof ADMIN!=='undefined'&&ADMIN.email)) cred.user.sendEmailVerification().catch(()=>{});
       return await loadMe();
     },
     // Tries the remembered country code first, then the selected one, then +998.
@@ -165,9 +175,31 @@ const Cloud = (function(){
       uid=cred.user.uid;
       const p=await loadMe();
       if(!p) throw Object.assign(new Error('noprofile'),{code:'auth/user-not-found'});
-      rememberDial(local,dial);
+      rememberDial(local,dial); savePhone(dial,local); recordLogin();
       return p;
     },
+    /* ----- presence & admin ----- */
+    touch(){ if(uid) db.collection('users').doc(uid).update({lastSeen:FV.serverTimestamp()}).catch(()=>{}); },
+    gamePlayed(){ if(uid) db.collection('users').doc(uid).update({'stats.games':FV.increment(1)}).catch(()=>{}); },
+    isAdmin(){ return isAdminUser(auth&&auth.currentUser); },
+    adminEmail(){ return typeof ADMIN!=='undefined'?ADMIN.email:''; },
+    // after clicking the link in Gmail: reload the account and refresh the token so the rules see it
+    async refreshAdmin(){ if(!auth.currentUser) return false; await auth.currentUser.reload(); await auth.currentUser.getIdToken(true); if(current) current.isAdmin=isAdminUser(auth.currentUser); return isAdminUser(auth.currentUser); },
+    resendVerification(){ return auth.currentUser ? auth.currentUser.sendEmailVerification() : Promise.resolve(); },
+    async sendAdminReset(){ await init(); return auth.sendPasswordResetEmail(ADMIN.email); },
+    setHideFollowers(v){ return db.collection('users').doc(uid).update({hideFollowers:!!v}); },
+    async adminUsers(){ const q=await db.collection('users').limit(2000).get(); return q.docs.map(d=>adminRow(d.id,d.data())); },
+    async adminUser(id){ const s=await db.collection('users').doc(id).get(); return s.exists?adminRow(s.id,s.data()):null; },
+    async adminPrivate(id){ const s=await db.collection('private').doc(id).get(); return s.exists?s.data():{}; },
+    async adminChats(id){
+      const q=await db.collection('chats').where('users','array-contains',id).limit(200).get();
+      return q.docs.map(d=>{ const x=d.data(); return {id:d.id,other:x.users.find(u=>u!==id),lastText:x.lastText||'',lastAt:ms(x.lastAt)}; }).sort((a,b)=>b.lastAt-a.lastAt);
+    },
+    async adminMessages(cid){ const q=await db.collection('chats').doc(cid).collection('messages').orderBy('at','desc').limit(300).get();
+      return q.docs.map(d=>{ const x=d.data(); return {from:x.from,type:x.type||'text',text:x.text,media:x.media,name:x.name,at:ms(x.at)}; }).reverse(); },
+    async adminFriends(id){ const q=await db.collection('friendships').where('users','array-contains',id).limit(300).get(); return q.docs.map(d=>d.data()).filter(f=>f.status==='accepted').map(f=>f.users.find(u=>u!==id)); },
+    adminSetScore(id,score){ return db.collection('users').doc(id).update({score:Math.max(0,Math.round(score))}); },
+    adminSetVerified(id,v){ return db.collection('users').doc(id).update({verified:!!v}); },
     async linkTelegram(tg){ await db.collection('users').doc(uid).set({tgId:tg.id,tgUsername:tg.username||''},{merge:true}); },
     async logout(){ if(unsubMe) unsubMe(); unsubMe=null; current=null; uid=null; if(auth) await auth.signOut(); },
     async changePassword(p){ await auth.currentUser.updatePassword(p); },
@@ -180,9 +212,13 @@ const Cloud = (function(){
         .catch(e=>console.warn('[Cloud] saveProfile',e));
     },
     // `delta` is the already-clamped change the app applied to p.score.
-    addScore(p,delta){
-      if(!uid||!delta) return;
-      const mk=monthKey(), upd={score:FV.increment(delta)};
+    // one write per answer: score change + answer statistics (extra = {correct:true|false})
+    addScore(p,delta,extra){
+      if(!uid||(!delta&&!extra)) return;
+      const mk=monthKey(), upd={lastSeen:FV.serverTimestamp()};
+      if(extra) upd[extra.correct?'stats.correct':'stats.wrong']=FV.increment(1);
+      if(!delta){ db.collection('users').doc(uid).update(upd).catch(()=>{}); return; }
+      upd.score=FV.increment(delta);
       if(p.monthKey!==mk){ p.monthKey=mk; p.monthScore=Math.max(0,delta); upd.monthKey=mk; upd.monthScore=p.monthScore; }
       else { const nm=Math.max(0,(p.monthScore||0)+delta), md=nm-(p.monthScore||0); p.monthScore=nm; if(md) upd.monthScore=FV.increment(md); }
       db.collection('users').doc(uid).update(upd).catch(e=>console.warn('[Cloud] addScore',e));

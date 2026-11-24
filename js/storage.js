@@ -52,8 +52,8 @@ const Store = (function(){
       return set(KEYS.profile, JSON.stringify(p));
     },
     // Called after every score change with the delta that was applied to p.score.
-    addScore(p, delta){
-      if(online()){ Cloud.addScore(p, delta); return true; }
+    addScore(p, delta, extra){
+      if(online()){ Cloud.addScore(p, delta, extra); return true; }
       return set(KEYS.profile, JSON.stringify(p));
     },
     getLang(){ return get(KEYS.lang); },

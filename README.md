@@ -92,6 +92,28 @@ Firebase'ni sozlash (yangi loyiha uchun): Authentication → Email/Password yoqi
 yaratiladi; **Rules** ga `firestore.rules` mazmuni qo'yiladi → Publish; **Indexes** da
 `users`: `monthKey` ↑, `monthScore` ↓ indeksi yaratiladi.
 
+## Admin panel
+
+- Admin raqami: **+998 77 485 97 17** (`js/admin-config.js`). Shu raqam bilan ro'yxatdan
+  o'tilganda akkaunt **madam1novde@gmail.com** ga bog'lanadi va Gmail'ga tasdiqlash xati
+  keladi. Xatdagi havola bosilgach, menyuda **Admin panel** paydo bo'ladi (huquqni
+  `firestore.rules` dagi `isAdmin()` ham tekshiradi — faqat tasdiqlangan shu Gmail).
+- Panelda: jami foydalanuvchilar, hozir onlayn (oxirgi 3 daqiqada faol), bugun qo'shilganlar,
+  jami to'g'ri/xato javoblar va o'yinlar; foydalanuvchilar ro'yxati (Onlayn / Hammasi, qidiruv).
+- Foydalanuvchini bossangiz: ism, familiya, telefon, ID, Telegram, ball, liga, to'g'ri/xato
+  javoblar (%), o'yinlar, kirishlar soni, oxirgi kirish, onlayn holati, ro'yxatdan o'tgan sana,
+  obunachilar/obunalar/do'stlar va suhbatlari (xabarlarni o'qish mumkin). Ballni tuzatish va
+  ko'k "tasdiqlangan" belgisini berish.
+- **Parollar ko'rinmaydi** — Firebase ularni qaytarib bo'lmaydigan shaklda saqlaydi.
+- Admin obunachilarini boshqalardan yashirish mumkin; admin oddiy o'yinchi kabi o'ynay oladi.
+- **Parolni unutish / o'zgartirish:** kirish oynasida admin raqamini yozib "Parolni
+  unutdingizmi?" → Gmail'ga havola keladi. Admin panelda ham shu tugma bor.
+- **Kirish ogohlantirishlari:** har bir admin kirish urinishi (to'g'ri yoki noto'g'ri parol)
+  bot serveriga yuboriladi: Telegram'ga xabar (BOT_TOKEN kerak) va Gmail'ga xat — buning uchun
+  bot serverida `BREVO_API_KEY` bo'lishi kerak (brevo.com, bepul: kuniga 300 xat).
+- Ro'yxatdan o'tish oynasida foydalanuvchilar administrator ma'lumotlarni (xabarlarni ham)
+  ko'rib chiqishi mumkinligi haqida ogohlantiriladi.
+
 ## Telegram bot (`bot/server.js`)
 
 Bot va sayt birga ishlaydi:

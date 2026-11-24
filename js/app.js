@@ -40,15 +40,15 @@ function canLoseScore(score){ return leagueIdx(score)>=1; }       // minus point
 function canPlayStrangers(score){ return leagueIdx(score)>=1; }
 function myScore(){ return profile ? (profile.score||0) : 0; }
 function monthKeyNow(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
-function addScore(n){
+function addScore(n,extra){
   if(!profile) return 0;
-  if(n<0 && !canLoseScore(myScore())) return 0;
+  if(n<0 && !canLoseScore(myScore())){ if(extra) Store.addScore(profile,0,extra); return 0; }
   const before=myScore(); profile.score=Math.max(0,before+n);
   const d=profile.score-before;
   if(d){
     if(!Cloud.enabled){ const mk=monthKeyNow(); if(profile.monthKey!==mk){ profile.monthKey=mk; profile.monthScore=0; } profile.monthScore=Math.max(0,(profile.monthScore||0)+d); }
-    Store.addScore(profile,d);
-  }
+    Store.addScore(profile,d,extra);
+  } else if(extra) Store.addScore(profile,0,extra);
   return d;
 }
 function leagueBadge(score){ const i=leagueIdx(score); return `<span class="badge"><span class="sw" style="background:${LEAGUES[i].col}"></span>${leagueName(i)}</span>`; }
@@ -244,9 +244,9 @@ function loadQ(){
 }
 function resolveQuestion(picked){
   const item=currentItem(), correct=(picked===item.c);
-  if(isTeam){ if(correct) teamYouCorrect++; else teamYouWrong++; if(room) Cloud.roomProgress(room.id,teamYouCorrect,qi+1); }
+  if(isTeam){ if(correct) teamYouCorrect++; else teamYouWrong++; if(room) Cloud.roomProgress(room.id,teamYouCorrect,qi+1); if(profile) Store.addScore(profile,0,{correct}); }
   else {
-    if(correct){ meScore++; matchDelta+=addScore(1); } else { matchDelta+=addScore(-1); }
+    if(correct){ meScore++; matchDelta+=addScore(1,{correct:true}); } else { matchDelta+=addScore(-1,{correct:false}); }
     if(pvp) Cloud.pvpProgress(pvp.id,meScore,qi+1); else aiAnswers();
   }
   lockAndShow(item.c,picked);
@@ -298,6 +298,7 @@ function sendSticker(s,fromOpp){
 /* ---------- results ---------- */
 function endMatch(){
   clearInterval(timer);
+  if(Cloud.enabled && profile) Cloud.gamePlayed();
   if(isTeam && room){ room.finished=true; room.finishedAt=Date.now(); Cloud.roomProgress(room.id,teamYouCorrect,matchQs.length,true); renderTeamResult(); }
   else if(isTeam) finishTeamMatch();
   else if(pvp){ pvp.state='ended'; Cloud.pvpProgress(pvp.id,meScore,roundLimit(),true); renderPvpResult(); }
@@ -360,7 +361,7 @@ let ratingCache={};
 function userRow(u,i,val){
   const me=profile && u.uid===profile.uid;
   return `<div class="lbrow${me?' me':''}" onclick="openUser('${esc(u.uid)}')"><div class="lbrank${i<3?' top':''}">${i+1}</div><div class="av">${avatarHtml(u)}</div>
-    <div class="info"><b>${esc(u.name+' '+u.surname)}</b><span>${leagueName(leagueIdx(u.score))} · ${fmtNum(u.followers||0)} ${t('followersShort')}</span></div>
+    <div class="info"><b>${esc(u.name+' '+u.surname)}${u.verified?verifiedIcon():''}</b><span>${leagueName(leagueIdx(u.score))}${u.hideFollowers?'':' · '+fmtNum(u.followers||0)+' '+t('followersShort')}</span></div>
     <div class="lbscore">${fmtNum(val)}</div></div>`;
 }
 async function loadBoard(kind){
@@ -402,7 +403,7 @@ function hasPremium(){ return !!(profile && profile.premium && profile.premium.a
 function renderProfile(){
   if(!profile) return;
   $('pfHandle').textContent=profile.name+' '+profile.surname;
-  $('pfName').textContent=profile.name+' '+profile.surname;
+  $('pfName').innerHTML=esc(profile.name+' '+profile.surname)+(profile.verified?verifiedIcon():'');
   $('pfId').textContent='ID: '+profile.id+(profile.tgUsername?' · @'+profile.tgUsername:'');
   $('pfScore').textContent=fmtNum(myScore());
   $('pfFollowers').textContent=fmtNum(profile.followers||0);
@@ -444,6 +445,7 @@ async function openUser(uid){
 function friendStatus(uid){ const f=friendsState.find(x=>x.other===uid); return f ? (f.status==='accepted'?'friend':(f.incoming?'incoming':'pending')) : 'none'; }
 function renderUserProfile(u,following){
   $('upTitle').textContent=u.name+' '+u.surname;
+  const hide=u.hideFollowers && !(profile && (profile.uid===u.uid || Cloud.isAdmin()));
   const fs=friendStatus(u.uid);
   const friendBtn = fs==='friend' ? `<button class="btn primary sm" onclick="openChallenge('${u.uid}')">${icon('swords',16)} ${t('challengeBtn')}</button>`
     : fs==='incoming' ? `<button class="btn outline sm" onclick="acceptFriendOf('${u.uid}')">${t('accept')}</button>`
@@ -452,9 +454,9 @@ function renderUserProfile(u,following){
   $('upContent').innerHTML=`
     <div class="pfhead"><div class="av xl">${avatarHtml(u)}</div>
       <div class="pfstats"><div><b>${fmtNum(u.score)}</b><span>${t('score')}</span></div>
-      <div class="tap" onclick="openPeople('${u.uid}','followers')"><b id="upFollowers">${fmtNum(u.followers||0)}</b><span>${t('followers')}</span></div>
+      <div class="${hide?'':'tap'}" ${hide?'':`onclick="openPeople('${u.uid}','followers')"`}><b id="upFollowers">${hide?'—':fmtNum(u.followers||0)}</b><span>${t('followers')}</span></div>
       <div class="tap" onclick="openPeople('${u.uid}','following')"><b>${fmtNum(u.following||0)}</b><span>${t('followingLbl')}</span></div></div></div>
-    <div class="pfinfo"><div class="pfname">${esc(u.name+' '+u.surname)}</div><div class="muted small">ID: ${esc(u.id)}${u.tgUsername?' · @'+esc(u.tgUsername):''}</div>
+    <div class="pfinfo"><div class="pfname">${esc(u.name+' '+u.surname)}${u.verified?verifiedIcon():''}</div><div class="muted small">ID: ${esc(u.id)}${u.tgUsername?' · @'+esc(u.tgUsername):''}</div>
       <div class="pfbadges">${leagueBadge(u.score)}</div></div>
     <div class="pfactions">
       <button class="btn ${following?'outline':'primary'}" id="followBtn" onclick="toggleFollow('${u.uid}',${following?1:0})">${following?icon('userCheck',18)+' '+t('followingBtn'):t('followBtn')}</button>
@@ -833,7 +835,11 @@ function submitAuth(){
     saveProfile(); go('home'); applyLang(); return;
   }
   if(!local||!pass){ errEl.textContent=t('fillAll'); return; }
-  if(Cloud.enabled){ cloudAuth(()=>Cloud.login(local,selectedCountry.dial,pass)); return; }
+  if(Cloud.enabled){
+    const adminTry = typeof ADMIN!=='undefined' && (selectedCountry.dial+local===ADMIN.phone || local===ADMIN.phone);
+    cloudAuth(()=>Cloud.login(adminTry?ADMIN.phone.slice(3):local,adminTry?'998':selectedCountry.dial,pass)).then(ok=>{ if(adminTry) reportAdminAttempt(ok); });
+    return;
+  }
   const saved=Store.getProfile();
   if(!saved){ errEl.textContent=t('noAcc'); return; }
   if(String(saved.phone||'').replace(/\D/g,'').slice(-local.length)!==local || saved.pass!==pass){ errEl.textContent=t('wrongLogin'); return; }
@@ -854,6 +860,23 @@ async function cloudAuth(fn,errBox){
   try{ profile=await fn(); errEl.textContent=''; pendingReg=null; startCloud(); go('home'); applyLang(); return true; }
   catch(e){ console.warn(e); errEl.textContent=cloudErrText(e); return false; }
   finally{ btn.disabled=false; }
+}
+
+/* ---------- forgot password ---------- */
+async function forgotPassword(){
+  const local=localDigits(), digits=selectedCountry.dial+local;
+  if(Cloud.enabled && typeof ADMIN!=='undefined' && (digits===ADMIN.phone||local===ADMIN.phone)){
+    try{ await Cloud.sendAdminReset(); alert(t('resetSent')+' '+ADMIN.email); }catch(e){ alert(cloudErrText(e)); }
+    return;
+  }
+  alert(t('forgotUser'));
+}
+// Every admin sign-in attempt (right or wrong password) is reported to the owner
+// through the bot server: Telegram message + e-mail (if an e-mail key is set there).
+function reportAdminAttempt(ok){
+  if(typeof TG==='undefined' || !TG.apiUrl) return;
+  fetch(TG.apiUrl+'/api/admin-alert',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ok:!!ok,ua:navigator.userAgent.slice(0,160),lang:navigator.language,at:new Date().toString()})}).catch(()=>{});
 }
 
 /* ---------- Telegram: confirm + mandatory channel subscription ---------- */
@@ -932,6 +955,8 @@ function startCloud(){
     updateFriendsBadge(); if($('friends').classList.contains('active')) renderFriends();
   });
   startChatsWatch();
+  Cloud.touch(); clearInterval(startCloud._hb); startCloud._hb=setInterval(()=>{ if(document.visibilityState==='visible') Cloud.touch(); },120000);
+  updateAdminUi(); checkAdminVerification();
   if(unsubFollowFeed) unsubFollowFeed();
   let feedFirst=true;
   unsubFollowFeed=Cloud.watchFollowers(async list=>{
@@ -958,7 +983,7 @@ function startCloud(){
 function stopCloudWatchers(){
   if(unsubFriends) unsubFriends(); if(unsubIncoming) unsubIncoming();
   if(typeof unsubChats==='function') unsubChats(); unsubChats=null; chatsState=[]; stopChat(); updateChatBadge();
-  if(unsubFollowFeed) unsubFollowFeed(); unsubFollowFeed=null; followFeed=[];
+  if(unsubFollowFeed) unsubFollowFeed(); unsubFollowFeed=null; followFeed=[]; clearInterval(startCloud._hb); updateAdminUi();
   unsubFriends=unsubIncoming=null; friendsState=[]; incomingCh=[]; clearInterval(startCloud._t); updateFriendsBadge(); closeModal();
 }
 function updateFriendsBadge(){ const n=friendsState.filter(f=>f.incoming).length+incomingCh.length; const b=$('friendsBadge'); b.textContent=n; b.style.display=n?'flex':'none'; updateBellDot(); }
@@ -1162,6 +1187,107 @@ async function sendMsg(){
 function stopChat(){ if(rec) stopRecord(false); if(unsubMsgs) unsubMsgs(); unsubMsgs=null; if(chatCid){ chatCid=null; updateChatBadge(); } }
 function closeChat(){ lastChatOther=null; go('chats'); }
 function chatOpenProfile(){ if(chatOther) openUser(chatOther); }
+
+/* ---------- ADMIN PANEL ----------
+   Visible only for the admin account (phone ADMIN.phone, Gmail ADMIN.email verified).
+   Firestore rules give that account read access to everything it shows here.
+   Passwords are NOT shown: Firebase stores them one-way hashed; nobody can read them. */
+let adminUsers=[], adminFilter='online', adminQuery='', adminSel=null;
+const ONLINE_MS=3*60000;
+function isOnline(u){ return u.lastSeen && Date.now()-u.lastSeen<ONLINE_MS; }
+function ago(ms){
+  if(!ms) return '—'; const d=Math.max(0,Date.now()-ms), m=Math.floor(d/60000);
+  if(m<1) return t('justNow'); if(m<60) return m+' '+t('minAgo'); const h=Math.floor(m/60); if(h<24) return h+' '+t('hourAgo');
+  return new Date(ms).toLocaleString();
+}
+function updateAdminUi(){ const on=!!(Cloud.enabled && profile && Cloud.isAdmin()); document.querySelectorAll('.adminOnly').forEach(e=>e.style.display=on?'':'none'); }
+async function checkAdminVerification(){
+  if(!Cloud.enabled || !profile || typeof ADMIN==='undefined') return;
+  const u=firebase.auth().currentUser; if(!u || u.email!==ADMIN.email || u.emailVerified) return;
+  openModal(`<div class="brandmark big" style="margin:0 auto 12px">${icon('shield',28)}</div><h2>${t('adminVerifyTitle')}</h2>
+    <p class="muted" style="margin-top:6px">${t('adminVerifyText')} <b>${esc(ADMIN.email)}</b></p>
+    <div class="row2"><button class="btn outline" onclick="Cloud.resendVerification().then(()=>toast(t('resetSent')+' '+ADMIN.email)).catch(e=>toast(cloudErrText(e)))">${t('resend')}</button>
+    <button class="btn primary" onclick="adminRecheck()">${t('tgRecheck')}</button></div>`);
+}
+async function adminRecheck(){ try{ const ok=await Cloud.refreshAdmin(); if(ok){ closeModal(); updateAdminUi(); toast(t('adminReady')); } else toast(t('adminNotYet')); }catch(e){ toast(cloudErrText(e)); } }
+async function openAdmin(){
+  toggleMenu(false);
+  if(!Cloud.isAdmin()){ checkAdminVerification(); return; }
+  go('admin'); $('adminList').innerHTML='<div class="note">…</div>';
+  try{ adminUsers=await Cloud.adminUsers(); }catch(e){ $('adminList').innerHTML=`<div class="note">${cloudErrText(e)}</div>`; return; }
+  renderAdmin();
+}
+function renderAdmin(){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const online=adminUsers.filter(isOnline), sum=k=>adminUsers.reduce((a,u)=>a+((u.stats||{})[k]||0),0);
+  $('adminStats').innerHTML=[[t('admTotal'),adminUsers.length],[t('admOnline'),online.length],[t('admToday'),adminUsers.filter(u=>u.createdAt>=today.getTime()).length],
+    [t('admCorrect'),fmtNum(sum('correct'))],[t('admWrong'),fmtNum(sum('wrong'))],[t('admGames'),fmtNum(sum('games'))]]
+    .map(([l,v])=>`<div class="stat"><b>${v}</b><span>${l}</span></div>`).join('');
+  document.querySelectorAll('#adminTabs button').forEach(b=>b.classList.toggle('on',b.dataset.f===adminFilter));
+  let list = adminFilter==='online' ? online : adminUsers.slice();
+  const q=adminQuery.trim().toLowerCase();
+  if(q) list=list.filter(u=>(u.name+' '+u.surname).toLowerCase().includes(q) || (u.id||'').includes(q) || (u.phone||'').includes(q));
+  list.sort((a,b)=> adminFilter==='online' ? b.lastSeen-a.lastSeen : (b.lastSeen-a.lastSeen));
+  $('adminList').innerHTML = list.length ? list.map(u=>`<div class="urow" onclick="openAdminUser('${u.uid}')"><div class="av">${avatarHtml(u)}</div>
+    <div class="info"><b>${esc(u.name+' '+u.surname)}${u.verified?verifiedIcon():''}</b><span>ID ${esc(u.id)} · ${fmtNum(u.score)} ${t('score')} · ${isOnline(u)?`<span class="onl">${t('online2')}</span>`:ago(u.lastSeen)}</span></div>
+    ${icon('chevron',18)}</div>`).join('') : `<div class="note">${adminFilter==='online'?t('admNoOnline'):t('friendNotFound')}</div>`;
+}
+function adminSetFilter(f){ adminFilter=f; renderAdmin(); }
+function adminSearch(v){ adminQuery=v; renderAdmin(); }
+async function openAdminUser(uid){
+  go('adminUser'); $('adminUserBox').innerHTML='<div class="note">…</div>';
+  try{
+    const [u,priv,chats,followers,following,friends]=await Promise.all([Cloud.adminUser(uid),Cloud.adminPrivate(uid),Cloud.adminChats(uid),
+      Cloud.listFollowers(uid),Cloud.listFollowing(uid),Cloud.adminFriends(uid)]);
+    if(!u){ $('adminUserBox').innerHTML=`<div class="note">${t('friendNotFound')}</div>`; return; }
+    adminSel={u,priv,chats};
+    const names=await Cloud.getUsers([...new Set(chats.map(c=>c.other).concat(followers,following,friends))]); names.forEach(x=>friendUsers[x.uid]=x);
+    const nm=id=>{ const x=friendUsers[id]; return x?esc(x.name+' '+x.surname):id.slice(0,8); };
+    const st=u.stats||{}, total=(st.correct||0)+(st.wrong||0);
+    const row=(k,v)=>`<div class="kv"><span>${k}</span><b>${v}</b></div>`;
+    const people=(ids)=>ids.length?ids.map(id=>`<span class="chipname" onclick="openAdminUser('${id}')">${nm(id)}</span>`).join(''):'—';
+    $('adminUserBox').innerHTML=`
+      <div class="pfhead"><div class="av xl">${avatarHtml(u)}</div><div class="pfinfo" style="padding:0">
+        <div class="pfname">${esc(u.name+' '+u.surname)}${u.verified?verifiedIcon():''}</div>
+        <div class="muted small">${isOnline(u)?`<span class="onl">● ${t('online2')}</span>`:t('lastSeenLbl')+': '+ago(u.lastSeen)}</div></div></div>
+      <div class="card kvcard">
+        ${row(t('name'),esc(u.name))}${row(t('surname'),esc(u.surname))}${row(t('phone'),esc(priv.phone||'—'))}${row('ID',esc(u.id))}
+        ${row('Telegram',u.tgUsername?'@'+esc(u.tgUsername):'—')}${row(t('passLbl'),`<span class="muted">${t('passHidden')}</span>`)}
+        ${row(t('score'),fmtNum(u.score))}${row(t('league'),leagueName(leagueIdx(u.score)))}${row(t('monthScoreLbl'),fmtNum(u.monthScore))}
+        ${row(t('admCorrect'),fmtNum(st.correct||0)+(total?` (${Math.round(100*(st.correct||0)/total)}%)`:''))}${row(t('admWrong'),fmtNum(st.wrong||0))}${row(t('admGames'),fmtNum(st.games||0))}
+        ${row(t('admLogins'),fmtNum(u.logins||0))}${row(t('admLastLogin'),ago(u.lastLogin))}${row(t('admRegistered'),u.createdAt?new Date(u.createdAt).toLocaleString():'—')}
+        ${row(t('followers'),fmtNum(u.followers))}${row(t('followingLbl'),fmtNum(u.following))}${row('Premium',u.premium&&u.premium.active?t('yes'):t('no'))}
+      </div>
+      <div class="secTitle">${t('followers')} · ${followers.length}</div><div class="chips">${people(followers)}</div>
+      <div class="secTitle">${t('followingLbl')} · ${following.length}</div><div class="chips">${people(following)}</div>
+      <div class="secTitle">${t('myFriends')} · ${friends.length}</div><div class="chips">${people(friends)}</div>
+      <div class="secTitle">${t('messages')} · ${chats.length}</div>
+      <div class="urows">${chats.length?chats.map(c=>`<div class="urow" onclick="openAdminChat('${c.id}','${uid}')"><div class="av">${avatarHtml(friendUsers[c.other])}</div>
+        <div class="info"><b>${nm(c.other)}</b><span>${esc(c.lastText)} · ${timeShort(c.lastAt)}</span></div>${icon('chevron',18)}</div>`).join(''):'<div class="note" style="padding:4px 0">—</div>'}</div>
+      <div class="stack" style="max-width:none;padding:16px">
+        <button class="btn outline" onclick="adminEditScore('${uid}',${u.score})">${t('admEditScore')}</button>
+        <button class="btn outline" onclick="adminToggleVerified('${uid}',${u.verified?1:0})">${u.verified?t('admUnverify'):t('admVerify')}</button>
+      </div>`;
+  }catch(e){ console.warn(e); $('adminUserBox').innerHTML=`<div class="note">${cloudErrText(e)}</div>`; }
+}
+async function openAdminChat(cid,ownerUid){
+  go('adminChat'); $('adminChatBox').innerHTML='<div class="note">…</div>';
+  try{
+    const msgs=await Cloud.adminMessages(cid), [a,b]=cid.split('_'), nm=id=>{ const x=friendUsers[id]; return x?x.name+' '+x.surname:id; };
+    $('adminChatTitle').textContent=nm(a)+' — '+nm(b); adminChatBack=ownerUid;
+    $('adminChatBox').innerHTML = msgs.length ? msgs.map(m=>{
+      const body = m.type==='image'&&m.media ? `<img src="${esc(m.media)}" style="max-width:220px;border-radius:12px">` : m.type==='voice'&&m.media ? `<audio controls src="${esc(m.media)}"></audio>`
+        : m.type==='file'&&m.media ? `<a class="filemsg" href="${esc(m.media)}" download="${esc(m.name||'file')}">${icon('copy',16)} ${esc(m.name||'file')}</a>` : esc(m.text);
+      return `<div class="msg ${m.from===ownerUid?'me':'them'}"><div class="small" style="opacity:.75;font-weight:700">${esc(nm(m.from))}</div>${body}<span class="msgtime">${m.at?new Date(m.at).toLocaleString():''}</span></div>`; }).join('')
+      : `<div class="note">—</div>`;
+  }catch(e){ $('adminChatBox').innerHTML=`<div class="note">${cloudErrText(e)}</div>`; }
+}
+let adminChatBack=null;
+async function adminEditScore(uid,cur){ const v=prompt(t('admEditScore'),cur); if(v===null) return; const n=parseInt(v,10); if(isNaN(n)) return;
+  try{ await Cloud.adminSetScore(uid,n); toast(t('savedMsg')); openAdminUser(uid); }catch(e){ toast(cloudErrText(e)); } }
+async function adminToggleVerified(uid,cur){ try{ await Cloud.adminSetVerified(uid,!+cur); toast(t('savedMsg')); openAdminUser(uid); }catch(e){ toast(cloudErrText(e)); } }
+async function adminHideFollowers(v){ try{ await Cloud.setHideFollowers(v); profile.hideFollowers=v; toast(t('savedMsg')); }catch(e){ toast(cloudErrText(e)); } }
+function verifiedIcon(){ return `<span class="vbadge" title="verified">${icon('check',11)}</span>`; }
 
 /* ---------- swipe ---------- */
 let tsx=0,tsy=0;

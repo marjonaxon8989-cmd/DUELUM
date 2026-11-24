@@ -76,6 +76,8 @@
     </div>
     <div class="err" id="authErr"></div>
     <button class="btn primary" type="submit" id="authSubmit" data-i18n="createAcc">Akkaunt yaratish</button>
+    <button class="btn ghost" type="button" id="forgotBtn" onclick="forgotPassword()" data-i18n="forgotPass">Parolni unutdingizmi?</button>
+    <p class="hint" style="text-align:center" data-i18n="privacyNote"></p>
     <button class="btn ghost" type="button" data-i18n="back" onclick="go('authChoice')">Orqaga</button>
   </form>
 </div>
@@ -263,6 +265,43 @@
   <input type="file" id="attachInput" style="display:none" onchange="onAttach(this)">
 </div>
 
+<!-- ADMIN PANEL -->
+<div class="screen" id="admin">
+  <header class="appbar">
+    <button class="iconbtn" onclick="go('home')"><i data-icon="back"></i></button>
+    <b class="appbar-title" data-i18n="adminPanel">Admin panel</b>
+    <button class="iconbtn" onclick="openAdmin()" aria-label="refresh"><i data-icon="clock"></i></button>
+  </header>
+  <div class="adminstats" id="adminStats"></div>
+  <div class="tabs" id="adminTabs">
+    <button class="on" data-f="online" onclick="adminSetFilter('online')" data-i18n="admOnline">Onlayn</button>
+    <button data-f="all" onclick="adminSetFilter('all')" data-i18n="admAll">Hammasi</button>
+  </div>
+  <div class="searchbox"><i data-icon="search" data-size="18"></i><input data-i18n-ph="admSearchPh" placeholder="Ism, ID..." oninput="adminSearch(this.value)"></div>
+  <div class="urows" id="adminList"></div>
+  <div class="list" style="margin-top:18px">
+    <div class="listrow" onclick="Cloud.sendAdminReset().then(()=>toast(t('resetSent')+' '+ADMIN.email)).catch(e=>toast(cloudErrText(e)))"><i data-icon="lock"></i><span data-i18n="admResetMail">Parolni Gmail orqali o'zgartirish</span></div>
+    <div class="listrow" onclick="adminHideFollowers(!profile.hideFollowers)"><i data-icon="eyeOff"></i><span data-i18n="admHideFollowers">Obunachilarimni yashirish / ko'rsatish</span></div>
+    <div class="listrow" onclick="adminToggleVerified(profile.uid,profile.verified?1:0)"><i data-icon="check"></i><span data-i18n="admMyBadge">Tasdiqlangan belgim (yoqish / o'chirish)</span></div>
+  </div>
+</div>
+<div class="screen" id="adminUser">
+  <header class="appbar">
+    <button class="iconbtn" onclick="go('admin');renderAdmin()"><i data-icon="back"></i></button>
+    <b class="appbar-title" data-i18n="adminPanel">Admin panel</b>
+    <span class="iconbtn ghostspace"></span>
+  </header>
+  <div id="adminUserBox"></div>
+</div>
+<div class="screen" id="adminChat">
+  <header class="appbar">
+    <button class="iconbtn" onclick="adminChatBack?openAdminUser(adminChatBack):go('admin')"><i data-icon="back"></i></button>
+    <b class="appbar-title" id="adminChatTitle"></b>
+    <span class="iconbtn ghostspace"></span>
+  </header>
+  <div id="adminChatBox" style="padding:12px;display:flex;flex-direction:column;gap:6px"></div>
+</div>
+
 <!-- TEAM BATTLE 4v4 -->
 <div class="screen" id="teamBattle">
   <header class="appbar">
@@ -384,6 +423,7 @@
       <input class="field" id="newPassInput" type="password" autocomplete="new-password" data-i18n-ph="newPass" placeholder="Yangi parol">
       <button onclick="savePassword()" class="on2" data-i18n="save">Saqlash</button>
     </div>
+    <div class="mrow adminOnly" style="display:none" onclick="openAdmin()"><i data-icon="shield"></i><span data-i18n="adminPanel">Admin panel</span></div>
     <div class="mrow" onclick="toggleMenu(false);go('chats')"><i data-icon="send"></i><span data-i18n="messages">Xabarlar</span></div>
     <div class="mrow" onclick="toggleMenu(false);go('calculator')"><i data-icon="calc"></i><span data-i18n="calcTitle">Kalkulyator</span></div>
     <div class="mrow" onclick="toggleMenu(false);go('premium')"><i data-icon="crown"></i><span data-i18n="premiumTitle">Premium</span></div>
@@ -420,6 +460,7 @@
 
 <script src="js/firebase-config.js"></script>
 <script src="js/telegram-config.js"></script>
+<script src="js/admin-config.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/i18n.js"></script>
 <script src="js/data.js"></script>
