@@ -1200,14 +1200,34 @@ function ago(ms){
   if(m<1) return t('justNow'); if(m<60) return m+' '+t('minAgo'); const h=Math.floor(m/60); if(h<24) return h+' '+t('hourAgo');
   return new Date(ms).toLocaleString();
 }
-function updateAdminUi(){ const on=!!(Cloud.enabled && profile && Cloud.isAdmin()); document.querySelectorAll('.adminOnly').forEach(e=>e.style.display=on?'':'none'); }
+function updateAdminUi(){
+  const on=!!(Cloud.enabled && profile && (Cloud.isAdmin() || Cloud.needsAdminLink()));
+  document.querySelectorAll('.adminOnly').forEach(e=>e.style.display=on?'':'none');
+}
 async function checkAdminVerification(){
   if(!Cloud.enabled || !profile || typeof ADMIN==='undefined') return;
-  const u=firebase.auth().currentUser; if(!u || u.email!==ADMIN.email || u.emailVerified) return;
+  const u=firebase.auth().currentUser; if(!u) return;
+  if(Cloud.needsAdminLink()){
+    openModal(`<div class="brandmark big" style="margin:0 auto 12px">${icon('shield',28)}</div><h2>${t('adminLinkTitle')}</h2>
+      <p class="muted" style="margin-top:6px">${t('adminLinkText')} <b>${esc(ADMIN.email)}</b></p>
+      <input class="field" id="adminLinkPass" type="password" autocomplete="current-password" placeholder="${t('pass')}" style="margin-top:12px">
+      <div class="err" id="adminLinkErr"></div>
+      <div class="row2"><button class="btn outline" onclick="closeModal()">${t('cancel')}</button><button class="btn primary" onclick="adminLinkGmail()">${t('adminLinkBtn')}</button></div>`);
+    return;
+  }
+  if(u.email!==ADMIN.email || u.emailVerified) return;
   openModal(`<div class="brandmark big" style="margin:0 auto 12px">${icon('shield',28)}</div><h2>${t('adminVerifyTitle')}</h2>
     <p class="muted" style="margin-top:6px">${t('adminVerifyText')} <b>${esc(ADMIN.email)}</b></p>
     <div class="row2"><button class="btn outline" onclick="Cloud.resendVerification().then(()=>toast(t('resetSent')+' '+ADMIN.email)).catch(e=>toast(cloudErrText(e)))">${t('resend')}</button>
     <button class="btn primary" onclick="adminRecheck()">${t('tgRecheck')}</button></div>`);
+}
+async function adminLinkGmail(){
+  const p=$('adminLinkPass').value, err=$('adminLinkErr'); if(!p){ err.textContent=t('fillAll'); return; }
+  err.textContent='…';
+  try{ await Cloud.linkAdminGmail(p);
+    $('modalCard').innerHTML=`<div class="brandmark big" style="margin:0 auto 12px">${icon('check',28)}</div><h2>${t('adminLinkSentTitle')}</h2>
+      <p class="muted" style="margin-top:6px">${t('adminLinkSent')} <b>${esc(ADMIN.email)}</b></p><button class="btn primary" style="margin-top:16px" onclick="closeModal()">OK</button>`;
+  }catch(e){ console.warn(e); err.textContent = ['auth/wrong-password','auth/invalid-credential','auth/invalid-login-credentials'].includes(e.code) ? t('wrongLogin') : cloudErrText(e); }
 }
 async function adminRecheck(){ try{ const ok=await Cloud.refreshAdmin(); if(ok){ closeModal(); updateAdminUi(); toast(t('adminReady')); } else toast(t('adminNotYet')); }catch(e){ toast(cloudErrText(e)); } }
 async function openAdmin(){

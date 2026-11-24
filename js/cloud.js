@@ -167,8 +167,10 @@ const Cloud = (function(){
       try{ const s=await db.collection('phones').doc(await sha256(local)).get(); if(s.exists) known=s.data().dial; }catch(e){}
       const dials=[...new Set([known,dial,'998'].filter(Boolean))];
       let cred=null, lastErr=null;
-      for(const d of dials){
-        try{ cred=await auth.signInWithEmailAndPassword(emailOf(d+local),pass); dial=d; break; }
+      const emails=[];
+      dials.forEach(d=>{ emails.push([emailOf(d+local),d]); if(typeof ADMIN!=='undefined' && d+local===ADMIN.phone) emails.push([d+local+'@phone.1v1duel.app',d]); });
+      for(const [em,d] of emails){
+        try{ cred=await auth.signInWithEmailAndPassword(em,pass); dial=d; break; }
         catch(e){ lastErr=e; if(!['auth/invalid-credential','auth/wrong-password','auth/user-not-found','auth/invalid-login-credentials'].includes(e.code)) break; }
       }
       if(!cred) throw lastErr;
@@ -185,6 +187,16 @@ const Cloud = (function(){
     adminEmail(){ return typeof ADMIN!=='undefined'?ADMIN.email:''; },
     // after clicking the link in Gmail: reload the account and refresh the token so the rules see it
     async refreshAdmin(){ if(!auth.currentUser) return false; await auth.currentUser.reload(); await auth.currentUser.getIdToken(true); if(current) current.isAdmin=isAdminUser(auth.currentUser); return isAdminUser(auth.currentUser); },
+    // The admin phone already had a normal (phone-based) account: move that same
+    // account onto the admin Gmail. Firebase e-mails a link; after it is clicked the
+    // account's e-mail becomes the Gmail (verified) — score, followers, chats stay.
+    needsAdminLink(){ const u=auth&&auth.currentUser; return !!(u && typeof ADMIN!=='undefined' && u.email===ADMIN.phone+'@phone.1v1duel.app'); },
+    async linkAdminGmail(pass){
+      const u=auth.currentUser;
+      const cred=firebase.auth.EmailAuthProvider.credential(u.email,pass);
+      await u.reauthenticateWithCredential(cred);
+      await u.verifyBeforeUpdateEmail(ADMIN.email);
+    },
     resendVerification(){ return auth.currentUser ? auth.currentUser.sendEmailVerification() : Promise.resolve(); },
     async sendAdminReset(){ await init(); return auth.sendPasswordResetEmail(ADMIN.email); },
     setHideFollowers(v){ return db.collection('users').doc(uid).update({hideFollowers:!!v}); },
