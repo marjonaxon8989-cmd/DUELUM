@@ -120,6 +120,13 @@ const Cloud = (function(){
   }
   // private/{uid}: the phone number — readable only by the owner and the admin
   function savePhone(dial,local){ db.collection('private').doc(uid).set({phone:'+'+dial+' '+local,updatedAt:FV.serverTimestamp()},{merge:true}).catch(()=>{}); }
+  // Sessions that were already signed in (or accounts made before phones were stored):
+  // the phone digits are in the account's sign-in address, so store them once.
+  function savePhoneFromAuth(user){
+    const m=/^(\d{7,15})@phone\.1v1duel\.app$/.exec(user.email||''); const digits=m?m[1]:(user.email===(typeof ADMIN!=='undefined'&&ADMIN.email)?ADMIN.phone:'');
+    if(!digits) return;
+    db.collection('private').doc(uid).get().then(s=>{ if(!s.exists||!s.data().phone) db.collection('private').doc(uid).set({phone:'+'+digits,updatedAt:FV.serverTimestamp()},{merge:true}).catch(()=>{}); }).catch(()=>{});
+  }
   function recordLogin(){ db.collection('users').doc(uid).update({logins:FV.increment(1),lastLogin:FV.serverTimestamp(),lastSeen:FV.serverTimestamp()}).catch(()=>{}); }
   async function allocatePublicId(){
     // ids/{id} can only be CREATED (rules forbid overwrite), so a taken ID fails and we retry.
@@ -144,7 +151,7 @@ const Cloud = (function(){
         unsub=auth.onAuthStateChanged(x=>{ if(done) return; done=true; res(x); if(unsub) unsub(); else setTimeout(()=>unsub&&unsub(),0); });
       }),15000);
       if(!user) return null;
-      uid=user.uid; const p=await withTimeout(loadMe(),15000); if(p) recordLogin(); return p;
+      uid=user.uid; const p=await withTimeout(loadMe(),15000); if(p){ recordLogin(); savePhoneFromAuth(user); } return p;
     },
     async register({name,surname,digits,local,dial,pass,tg}){
       await init();
