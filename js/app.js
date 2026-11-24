@@ -772,7 +772,7 @@ async function savePassword(){
 }
 async function logout(){
   toggleMenu(false);
-  if(Cloud.enabled){ stopCloudWatchers(); stopPvp(); try{ await Cloud.logout(); }catch(e){} profile=null; go('authChoice'); return; }
+  if(Cloud.enabled){ stopCloudWatchers(); stopPvp(); try{ Cloud.away(); await Cloud.logout(); }catch(e){} profile=null; go('authChoice'); return; }
   if(profile){ profile.loggedIn=false; saveProfile(); }
   go('authChoice');
 }
@@ -955,7 +955,10 @@ function startCloud(){
     updateFriendsBadge(); if($('friends').classList.contains('active')) renderFriends();
   });
   startChatsWatch();
-  Cloud.touch(); clearInterval(startCloud._hb); startCloud._hb=setInterval(()=>{ if(document.visibilityState==='visible') Cloud.touch(); },120000);
+  Cloud.touch(); if(!startCloud._vis){ startCloud._vis=1;
+    document.addEventListener('visibilitychange',()=>{ if(!Cloud.enabled||!profile) return; document.visibilityState==='visible'?Cloud.touch():Cloud.away(); });
+    window.addEventListener('pagehide',()=>{ if(Cloud.enabled&&profile) Cloud.away(); }); }
+  clearInterval(startCloud._hb); startCloud._hb=setInterval(()=>{ if(document.visibilityState==='visible') Cloud.touch(); },120000);
   updateAdminUi(); checkAdminVerification();
   if(unsubFollowFeed) unsubFollowFeed();
   let feedFirst=true;
@@ -1194,7 +1197,7 @@ function chatOpenProfile(){ if(chatOther) openUser(chatOther); }
    Passwords are NOT shown: Firebase stores them one-way hashed; nobody can read them. */
 let adminUsers=[], adminFilter='online', adminQuery='', adminSel=null;
 const ONLINE_MS=3*60000;
-function isOnline(u){ return u.lastSeen && Date.now()-u.lastSeen<ONLINE_MS; }
+function isOnline(u){ return !u.away && u.lastSeen && Date.now()-u.lastSeen<ONLINE_MS; }
 function ago(ms){
   if(!ms) return '—'; const d=Math.max(0,Date.now()-ms), m=Math.floor(d/60000);
   if(m<1) return t('justNow'); if(m<60) return m+' '+t('minAgo'); const h=Math.floor(m/60); if(h<24) return h+' '+t('hourAgo');

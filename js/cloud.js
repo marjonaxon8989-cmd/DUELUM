@@ -88,7 +88,7 @@ const Cloud = (function(){
     avatar:p.avatar,followers:p.followers,following:p.following,tgUsername:p.tgUsername,verified:p.verified,hideFollowers:p.hideFollowers}; }
   // everything the admin panel shows about a user (except the password, which nobody can read)
   function adminRow(id,d){ return Object.assign(publicRow(id,d),{createdAt:ms(d.createdAt),lastSeen:d.lastSeen&&d.lastSeen.toMillis?d.lastSeen.toMillis():0,
-    lastLogin:d.lastLogin&&d.lastLogin.toMillis?d.lastLogin.toMillis():0,logins:d.logins||0,stats:d.stats||{},premium:d.premium||null}); }
+    away:!!d.away,lastLogin:d.lastLogin&&d.lastLogin.toMillis?d.lastLogin.toMillis():0,logins:d.logins||0,stats:d.stats||{},premium:d.premium||null}); }
   const lower=s=>String(s||'').trim().toLowerCase();
   async function sha256(text){
     const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('duelum:'+text));
@@ -127,7 +127,7 @@ const Cloud = (function(){
     if(!digits) return;
     db.collection('private').doc(uid).get().then(s=>{ if(!s.exists||!s.data().phone) db.collection('private').doc(uid).set({phone:'+'+digits,updatedAt:FV.serverTimestamp()},{merge:true}).catch(()=>{}); }).catch(()=>{});
   }
-  function recordLogin(){ db.collection('users').doc(uid).update({logins:FV.increment(1),lastLogin:FV.serverTimestamp(),lastSeen:FV.serverTimestamp()}).catch(()=>{}); }
+  function recordLogin(){ db.collection('users').doc(uid).update({logins:FV.increment(1),lastLogin:FV.serverTimestamp(),lastSeen:FV.serverTimestamp(),away:false}).catch(()=>{}); }
   async function allocatePublicId(){
     // ids/{id} can only be CREATED (rules forbid overwrite), so a taken ID fails and we retry.
     for(let i=0;i<8;i++){
@@ -188,7 +188,9 @@ const Cloud = (function(){
       return p;
     },
     /* ----- presence & admin ----- */
-    touch(){ if(uid) db.collection('users').doc(uid).update({lastSeen:FV.serverTimestamp()}).catch(()=>{}); },
+    touch(){ if(uid) db.collection('users').doc(uid).update({lastSeen:FV.serverTimestamp(),away:false}).catch(()=>{}); },
+    // tab hidden / closed / phone locked → shown offline right away
+    away(){ if(uid) db.collection('users').doc(uid).update({away:true}).catch(()=>{}); },
     gamePlayed(){ if(uid) db.collection('users').doc(uid).update({'stats.games':FV.increment(1)}).catch(()=>{}); },
     isAdmin(){ return isAdminUser(auth&&auth.currentUser); },
     adminEmail(){ return typeof ADMIN!=='undefined'?ADMIN.email:''; },
