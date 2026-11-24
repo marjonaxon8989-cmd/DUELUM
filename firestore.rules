@@ -68,13 +68,13 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // phone number of each user: only the owner and the admin can read it
     // questions each player has already seen: {subject: [question ids]}
     match /seen/{uid} {
       allow read: if signedIn() && (me() == uid || isAdmin());
       allow create, update: if signedIn() && me() == uid;
       allow delete: if false;
     }
+    // phone number of each user: only the owner and the admin can read it
     match /private/{uid} {
       allow read: if signedIn() && (me() == uid || isAdmin());
       allow create, update: if signedIn() && me() == uid
