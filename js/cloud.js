@@ -42,7 +42,7 @@ const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/10.14.1/';
 
 const Cloud = (function(){
   const enabled = typeof FIREBASE_CONFIG !== 'undefined' && !!FIREBASE_CONFIG && !!FIREBASE_CONFIG.projectId;
-  let auth=null, db=null, FV=null, uid=null, unsubMe=null, onProfileCb=null, current=null;
+  let auth=null, db=null, FV=null, uid=null, unsubMe=null, onProfileCb=null, current=null, seenPending={}, seenTimer=null;
   const userCache={}; // uid -> {data, ts}
 
   // Any network step that hangs (slow mobile data, a flaky first connection)
@@ -189,6 +189,19 @@ const Cloud = (function(){
     },
     /* ----- presence & admin ----- */
     touch(){ if(uid) db.collection('users').doc(uid).update({lastSeen:FV.serverTimestamp(),away:false}).catch(()=>{}); },
+    // ---- questions already seen (one doc per player: {subject: [ids]}) ----
+    async seenLoad(){ if(!uid) return {}; const s=await db.collection('seen').doc(uid).get(); return s.exists ? s.data() : {}; },
+    seenAdd(subj,id,full){
+      if(!uid) return;
+      if(full){ seenPending[subj]=[]; db.collection('seen').doc(uid).set({[subj]:full},{merge:true}).catch(e=>console.warn('seen',e)); return; }
+      (seenPending[subj]=seenPending[subj]||[]).push(id);
+      clearTimeout(seenTimer); seenTimer=setTimeout(()=>Cloud.seenFlush(),1500);
+    },
+    seenFlush(){
+      if(!uid) return; const up={}; Object.keys(seenPending).forEach(s=>{ if(seenPending[s].length) up[s]=FV.arrayUnion(...seenPending[s]); }); seenPending={};
+      if(Object.keys(up).length) db.collection('seen').doc(uid).set(up,{merge:true}).catch(e=>console.warn('seen',e));
+    },
+    seenClear(subj){ if(!uid) return; seenPending[subj]=[]; db.collection('seen').doc(uid).set({[subj]:[]},{merge:true}).catch(()=>{}); },
     // tab hidden / closed / phone locked → shown offline right away
     away(){ if(uid) db.collection('users').doc(uid).update({away:true}).catch(()=>{}); },
     gamePlayed(){ if(uid) db.collection('users').doc(uid).update({'stats.games':FV.increment(1)}).catch(()=>{}); },
@@ -222,7 +235,7 @@ const Cloud = (function(){
     adminSetScore(id,score){ return db.collection('users').doc(id).update({score:Math.max(0,Math.round(score))}); },
     adminSetVerified(id,v){ return db.collection('users').doc(id).update({verified:!!v}); },
     async linkTelegram(tg){ await db.collection('users').doc(uid).set({tgId:tg.id,tgUsername:tg.username||''},{merge:true}); },
-    async logout(){ if(unsubMe) unsubMe(); unsubMe=null; current=null; uid=null; if(auth) await auth.signOut(); },
+    async logout(){ try{ Cloud.seenFlush(); }catch(e){} if(unsubMe) unsubMe(); unsubMe=null; current=null; uid=null; if(auth) await auth.signOut(); },
     async changePassword(p){ await auth.currentUser.updatePassword(p); },
     myUid(){ return uid; },
 

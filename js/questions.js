@@ -38,68 +38,126 @@ const QGen = (function(){
   // pick 3 other values from a list as distractors
   const others=(list,correct)=>list.filter(v=>v!==correct);
 
-  /* =========================== GENERATORS =========================== */
+  /* =========================== GENERATORS ===========================
+     Every generator takes a difficulty level L:
+       0 = oson (Bronza, Kumush)   1 = o'rta (Oltin, Platina)
+       2 = qiyin (Olmos, Smaragd)  3 = juda qiyin (Afsonaviy va yuqori)
+     Higher levels use bigger numbers, more steps, and extra question types
+     (g(fn, minLevel) — a type that only appears from that level up).      */
+  const g=(fn,min)=>{ fn.min=min||0; return fn; };
+  const lv=(L,arr)=>arr[Math.min(L,arr.length-1)];                 // value for this level
+  const gcd=(a,b)=>b?gcd(b,a%b):a;
+  const dec=x=>String(Math.round(x*100)/100).replace('.',',');
   const GEN={
     math:[
-      ()=>{ const a=R(12,999),b=R(12,999); return item(`m+${a}+${b}`,`${a} + ${b} = ?`,a+b,near(a+b)); },
-      ()=>{ let a=R(50,999),b=R(10,a); return item(`m-${a}-${b}`,`${a} − ${b} = ?`,a-b,near(a-b)); },
-      ()=>{ const a=R(11,99),b=R(2,9); return item(`m*${a}*${b}`,`${a} × ${b} = ?`,a*b,near(a*b).concat([a*(b+1),a*(b-1)])); },
-      ()=>{ const b=R(2,12),q=R(3,60); return item(`m/${b*q}/${b}`,`${b*q} ÷ ${b} = ?`,q,near(q)); },
-      ()=>{ const a=R(2,9),x=R(1,20),b=R(1,30); return item(`meq${a}x${b}=${a*x+b}`,`${a}x + ${b} = ${a*x+b}. x = ?`,x,near(x,4)); },
-      ()=>{ const p=pick([10,20,25,30,40,50,75]),n=pick([40,60,80,120,200,240,300,400,500,800]); return item(`m%${p}of${n}`,`${n} ning ${p}% i nechaga teng?`,n*p/100,near(n*p/100).concat([n*p/10,p])); },
-      ()=>{ const n=R(11,30); return item(`msq${n}`,`${n}² = ?`,n*n,near(n*n).concat([n*2,n*n+n])); },
-      ()=>{ const n=R(4,25); return item(`msqrt${n*n}`,`√${n*n} = ?`,n,near(n,4)); },
-      ()=>{ const a=R(2,20),b=R(2,9),c=R(2,9); return item(`mord${a}+${b}x${c}`,`${a} + ${b} × ${c} = ?`,a+b*c,[(a+b)*c].concat(near(a+b*c))); },
-      ()=>{ const a=R(2,9),b=R(2,5); return item(`mpow${a}^${b}`,`${a}^${b} (${a} ning ${b}-darajasi) = ?`,Math.pow(a,b),[a*b,Math.pow(a,b-1),Math.pow(a,b)+a,Math.pow(b,a)].concat(near(Math.pow(a,b)))); },
-      ()=>{ const g=R(2,9),a=R(1,9),b=R(a+1,12); return item(`mfrac${a*g}/${b*g}`,`${a*g}/${b*g} kasrni qisqartiring`,`${a}/${b}`,[`${a+1}/${b}`,`${a}/${b+1}`,`${b}/${a}`,`${a*2}/${b}`]); },
-      ()=>{ const a=R(100,999); const r=Math.round(a/10)*10; return item(`mround${a}`,`${a} sonini o'nlargacha yaxlitlang`,r,[r+10,r-10,Math.round(a/100)*100,a]); },
+      g(L=>{ const [lo,hi]=lv(L,[[10,99],[100,999],[1000,9999],[10000,99999]]); const a=R(lo,hi),b=R(lo,hi); return item(`m+${a}+${b}`,`${a} + ${b} = ?`,a+b,near(a+b)); }),
+      g(L=>{ const [lo,hi]=lv(L,[[20,99],[100,999],[1000,9999],[10000,99999]]); const a=R(lo,hi),b=R(Math.floor(lo/2),a-1); return item(`m-${a}-${b}`,`${a} − ${b} = ?`,a-b,near(a-b)); }),
+      g(L=>{ const [a,b]=lv(L,[[R(2,9),R(2,9)],[R(11,99),R(2,9)],[R(11,99),R(11,99)],[R(101,999),R(11,99)]]); return item(`m*${a}*${b}`,`${a} × ${b} = ?`,a*b,near(a*b).concat([a*(b+1),a*(b-1)])); }),
+      g(L=>{ const [b,q]=lv(L,[[R(2,9),R(2,10)],[R(2,12),R(10,60)],[R(11,25),R(10,99)],[R(12,50),R(50,500)]]); return item(`m/${b*q}/${b}`,`${b*q} ÷ ${b} = ?`,q,near(q)); }),
+      g(L=>{
+        if(L===0){ const x=R(1,30),b=R(1,40); return item(`meq1x${b}=${x+b}`,`x + ${b} = ${x+b}. x = ?`,x,near(x,4)); }
+        if(L===1){ const a=R(2,9),x=R(1,20),b=R(1,30); return item(`meq${a}x${b}=${a*x+b}`,`${a}x + ${b} = ${a*x+b}. x = ?`,x,near(x,4)); }
+        if(L===2){ const a=R(4,12),c=R(1,a-1),x=R(1,20),b=R(1,30),d=(a-c)*x+b; return item(`meq${a}x${b}=${c}x${d}`,`${a}x + ${b} = ${c}x + ${d}. x = ?`,x,near(x,4)); }
+        const a=R(2,9),b=R(1,15),x=R(b+1,b+25); return item(`meqp${a}(x-${b})=${a*(x-b)}`,`${a}(x − ${b}) = ${a*(x-b)}. x = ?`,x,near(x,4).concat([x-b,x-2*b]));
+      }),
+      g(L=>{
+        if(L<=1){ const p=lv(L,[pick([10,25,50]),pick([20,30,40,75])]),n=pick([40,60,80,120,200,240,300,400,500,800]); return item(`m%${p}of${n}`,`${n} ning ${p}% i nechaga teng?`,n*p/100,near(n*p/100).concat([n*p/10,p])); }
+        const p=R(1,19)*5,n=R(2,40)*20;
+        if(L===2) return item(`m%${p}of${n}`,`${n} ning ${p}% i nechaga teng?`,n*p/100,near(n*p/100).concat([n*p/10,p]));
+        return item(`m%up${p}of${n}`,`${n} sonini ${p}% ga oshirsak, nechaga teng bo'ladi?`,n+n*p/100,[n*p/100,n-n*p/100,n+p].concat(near(n+n*p/100)));
+      }),
+      g(L=>{ const n=R(...lv(L,[[2,12],[11,20],[21,40],[41,99]])); return item(`msq${n}`,`${n}² = ?`,n*n,near(n*n).concat([n*2,n*n+n])); }),
+      g(L=>{ const n=R(...lv(L,[[2,10],[11,20],[21,40],[41,99]])); return item(`msqrt${n*n}`,`√${n*n} = ?`,n,near(n,4)); }),
+      g(L=>{
+        if(L===0){ const a=R(2,20),b=R(2,9),c=R(2,9); return item(`mord${a}+${b}x${c}`,`${a} + ${b} × ${c} = ?`,a+b*c,[(a+b)*c].concat(near(a+b*c))); }
+        if(L===1){ const a=R(2,20),b=R(2,20),c=R(2,9),d=R(1,20); return item(`mord(${a}+${b})x${c}-${d}`,`(${a} + ${b}) × ${c} − ${d} = ?`,(a+b)*c-d,[a+b*c-d,(a+b)*(c-d)].concat(near((a+b)*c-d))); }
+        if(L===2){ const a=R(2,15),b=R(2,15),c=R(2,12),d=R(2,12); return item(`mord${a}x${b}-${c}x${d}`,`${a} × ${b} − ${c} × ${d} = ?`,a*b-c*d,[(a*b-c)*d].concat(near(a*b-c*d))); }
+        const e=R(2,9),q=R(2,12),a=R(2,12),b=R(2,15),c=R(2,15); return item(`mord${a}(${b}+${c})-${e*q}/${e}`,`${a} × (${b} + ${c}) − ${e*q} ÷ ${e} = ?`,a*(b+c)-q,[a*b+c-q,a*(b+c-q)].concat(near(a*(b+c)-q)));
+      }),
+      g(L=>{ const [a,b]=lv(L,[[R(2,5),R(2,3)],[R(2,9),R(2,3)],[R(2,6),R(4,5)],[R(2,3),R(6,10)]]); return item(`mpow${a}^${b}`,`${a}^${b} (${a} ning ${b}-darajasi) = ?`,Math.pow(a,b),[a*b,Math.pow(a,b-1),Math.pow(a,b)+a,Math.pow(b,a)].concat(near(Math.pow(a,b)))); }),
+      g(L=>{
+        if(L<=1){ const gg=R(2,lv(L,[5,9])),a=R(1,9),b=R(a+1,12); if(gcd(a,b)!==1) return null; return item(`mfrac${a*gg}/${b*gg}`,`${a*gg}/${b*gg} kasrni qisqartiring`,`${a}/${b}`,[`${a+1}/${b}`,`${a}/${b+1}`,`${b}/${a}`,`${a*2}/${b}`]); }
+        const b=R(3,12),d=L===2?b:R(3,12),a=R(1,b-1),c=R(1,d-1),num=a*d+c*b,den=b*d,k=gcd(num,den),N=num/k,Dd=den/k;
+        const ans=Dd===1?String(N):`${N}/${Dd}`;
+        return item(`mfadd${a}/${b}+${c}/${d}`,`${a}/${b} + ${c}/${d} = ? (qisqargan holda)`,ans,[`${a+c}/${b+d}`,`${a+c}/${den/k}`,`${N+1}/${Dd}`,`${N}/${Dd+1}`,`${a*c}/${den}`]);
+      }),
+      g(L=>{
+        if(L===3){ const x=R(100,9999)/100, r=Math.round(x*10)/10; return item(`mrndd${x}`,`${dec(x)} sonini o'ndan birlargacha yaxlitlang`,dec(r),[dec(r+0.1),dec(r-0.1),dec(Math.round(x)),dec(Math.floor(x*10)/10===r?r+0.2:Math.floor(x*10)/10)]); }
+        const [lo,hi,u,un]=lv(L,[[100,999,10,"o'nlar"],[1000,9999,100,'yuzlar'],[10000,99999,1000,'minglar']]); const a=R(lo,hi),r=Math.round(a/u)*u;
+        return item(`mround${a}-${u}`,`${a} sonini ${un}gacha yaxlitlang`,r,[r+u,r-u,Math.round(a/(u*10))*u*10,a]);
+      }),
+      g(L=>{ const b=R(3,lv(L,[9,9,15,25])),a=R(b+1,lv(L,[50,50,200,999])); return item(`mmod${a}%${b}`,`${a} ni ${b} ga bo'lgandagi qoldiq nechaga teng?`,a%b,[Math.floor(a/b)].concat(near(a%b,3)).filter(v=>v<b||v===Math.floor(a/b))); },1),
+      g(L=>{ const n=lv(L,[3,3,4,5]),xs=Array.from({length:n},()=>R(2,L>=3?99:40)); const s=xs.reduce((p,c)=>p+c,0); const m=Math.round(s/n); const ys=xs.slice(0,n-1).concat([m*n-(s-xs[n-1])]); if(ys[n-1]<1) return null;
+        return item(`mavg${ys.join(',')}`,`${ys.join(', ')} sonlarining o'rta arifmetigi?`,m,near(m,5).concat([m*n])); },1),
+      g(L=>{ const k=R(2,lv(L,[9,9,12,25])),a=k*R(2,9),b=k*R(2,9); if(a===b) return null; return item(`mgcd${a},${b}`,`${a} va ${b} sonlarining EKUB i (eng katta umumiy bo'luvchisi)?`,gcd(a,b),[k,a*b/gcd(a,b),gcd(a,b)*2,Math.abs(a-b)].filter(v=>v!==gcd(a,b)||false).concat(near(gcd(a,b),3))); },2),
+      g(L=>{ const a=R(2,lv(L,[12,12,15,30])),b=R(2,lv(L,[12,12,15,30])); if(a===b) return null; const l=a*b/gcd(a,b); return item(`mlcm${a},${b}`,`${a} va ${b} sonlarining EKUK i (eng kichik umumiy karralisi)?`,l,[a*b===l?l*2:a*b,gcd(a,b),a+b].concat(near(l))); },2),
+      g(L=>{ const a=R(10,200),b=R(10,200),c=R(1,99); return item(`mneg-${a}+${b}-${c}`,`−${a} + ${b} − ${c} = ?`,-a+b-c,[a+b-c,-a-b-c,-a+b+c,a-b+c]); },3),
     ],
     geom:[
-      ()=>{ const a=R(2,25),b=R(2,25); return item(`grectS${a}x${b}`,`Tomonlari ${a} sm va ${b} sm bo'lgan to'g'ri to'rtburchakning yuzi?`,a*b,[2*(a+b),a+b,a*b+a].concat(near(a*b)),' sm²'); },
-      ()=>{ const a=R(2,25),b=R(2,25); return item(`grectP${a}x${b}`,`Tomonlari ${a} sm va ${b} sm bo'lgan to'g'ri to'rtburchakning perimetri?`,2*(a+b),[a*b,a+b,4*a].concat(near(2*(a+b))),' sm'); },
-      ()=>{ const a=R(2,30); return item(`gsqS${a}`,`Tomoni ${a} sm bo'lgan kvadratning yuzi?`,a*a,[4*a,2*a].concat(near(a*a)),' sm²'); },
-      ()=>{ const a=R(2,40); return item(`gsqP${a}`,`Tomoni ${a} sm bo'lgan kvadratning perimetri?`,4*a,[a*a,2*a].concat(near(4*a)),' sm'); },
-      ()=>{ const x=R(20,100),y=R(20,160-x); return item(`gtri${x}-${y}`,`Uchburchakning ikki burchagi ${x}° va ${y}°. Uchinchi burchagi necha gradus?`,180-x-y,[360-x-y,x+y].concat(near(180-x-y,15)),'°'); },
-      ()=>{ const t=pick([[3,4,5],[5,12,13],[8,15,17],[7,24,25]]),k=R(1,4); return item(`ghyp${t[0]*k}-${t[1]*k}`,`To'g'ri burchakli uchburchakning katetlari ${t[0]*k} va ${t[1]*k}. Gipotenuza?`,t[2]*k,[(t[0]+t[1])*k,t[2]*k+k,t[2]*k-k,t[1]*k+1]); },
-      ()=>{ const n=R(3,12); return item(`gpoly${n}`,`${n} burchakli qavariq ko'pburchak ichki burchaklari yig'indisi?`,(n-2)*180,[n*180,(n-1)*180,(n-3)*180,n*90].filter(v=>v>0),'°'); },
-      ()=>{ const a=R(2,12); return item(`gcube${a}`,`Qirrasi ${a} sm bo'lgan kubning hajmi?`,a*a*a,[a*a*6,a*a,12*a].concat(near(a*a*a)),' sm³'); },
-      ()=>{ const a=R(2,15),b=R(2,15),c=R(2,15); return item(`gbox${a}-${b}-${c}`,`O'lchamlari ${a}×${b}×${c} sm bo'lgan to'g'ri burchakli parallelepiped hajmi?`,a*b*c,[a*b+c,2*(a*b+b*c+a*c),a+b+c].concat(near(a*b*c)),' sm³'); },
-      ()=>{ const r=R(1,20), v=x=>String(Math.round(x*100)/100).replace('.',','); return item(`gcircC${r}`,`Radiusi ${r} sm bo'lgan aylana uzunligi (π ≈ 3,14)?`,v(2*3.14*r),[v(3.14*r),v(3.14*r*r),v(2*3.14*r+3.14),v(4*3.14*r)],' sm'); },
-      ()=>{ const a=R(2,20),h=R(2,20); return item(`gtriS${a}-${h}`,`Asosi ${a} sm, balandligi ${h} sm bo'lgan uchburchak yuzi?`,a*h/2,[a*h,a+h,a*h/4].concat(near(a*h/2)),' sm²'); },
-      ()=>{ const x=R(10,170); return item(`gadj${x}`,`Qo'shni burchaklardan biri ${x}°. Ikkinchisi necha gradus?`,180-x,[90-x>0?90-x:x+5,360-x,x].concat(near(180-x,10)),'°'); },
+      g(L=>{ const m=lv(L,[12,25,60,150]),a=R(2,m),b=R(2,m); return item(`grectS${a}x${b}`,`Tomonlari ${a} sm va ${b} sm bo'lgan to'g'ri to'rtburchakning yuzi?`,a*b,[2*(a+b),a+b,a*b+a].concat(near(a*b)),' sm²'); }),
+      g(L=>{ const m=lv(L,[15,25,80,250]),a=R(2,m),b=R(2,m); return item(`grectP${a}x${b}`,`Tomonlari ${a} sm va ${b} sm bo'lgan to'g'ri to'rtburchakning perimetri?`,2*(a+b),[a*b,a+b,4*a].concat(near(2*(a+b))),' sm'); }),
+      g(L=>{ const a=R(2,lv(L,[12,30,60,99])); return item(`gsqS${a}`,`Tomoni ${a} sm bo'lgan kvadratning yuzi?`,a*a,[4*a,2*a].concat(near(a*a)),' sm²'); }),
+      g(L=>{ const a=R(2,lv(L,[20,40,99])); if(L>=2){ return item(`gsqPS${4*a}`,`Perimetri ${4*a} sm bo'lgan kvadratning yuzi?`,a*a,[4*a*4*a,2*a*a,a].concat(near(a*a)),' sm²'); } return item(`gsqP${a}`,`Tomoni ${a} sm bo'lgan kvadratning perimetri?`,4*a,[a*a,2*a].concat(near(4*a)),' sm'); }),
+      g(L=>{ const x=R(20,100),y=R(20,160-x); return item(`gtri${x}-${y}`,`Uchburchakning ikki burchagi ${x}° va ${y}°. Uchinchi burchagi necha gradus?`,180-x-y,[360-x-y,x+y].concat(near(180-x-y,15)),'°'); }),
+      g(L=>{ const t=pick([[3,4,5],[5,12,13],[8,15,17],[7,24,25],[20,21,29],[9,40,41]]),k=R(1,lv(L,[2,4,6,9])); return item(`ghyp${t[0]*k}-${t[1]*k}`,`To'g'ri burchakli uchburchakning katetlari ${t[0]*k} va ${t[1]*k}. Gipotenuza?`,t[2]*k,[(t[0]+t[1])*k,t[2]*k+k,t[2]*k-k,t[1]*k+1]); },1),
+      g(L=>{ const n=R(3,lv(L,[6,12,20,30])); return item(`gpoly${n}`,`${n} burchakli qavariq ko'pburchak ichki burchaklari yig'indisi?`,(n-2)*180,[n*180,(n-1)*180,(n-3)*180,n*90].filter(v=>v>0),'°'); },1),
+      g(L=>{ const a=R(2,lv(L,[5,12,20,30])); return item(`gcube${a}`,`Qirrasi ${a} sm bo'lgan kubning hajmi?`,a*a*a,[a*a*6,a*a,12*a].concat(near(a*a*a)),' sm³'); }),
+      g(L=>{ const m=lv(L,[8,15,25,40]),a=R(2,m),b=R(2,m),c=R(2,m); return item(`gbox${a}-${b}-${c}`,`O'lchamlari ${a}×${b}×${c} sm bo'lgan to'g'ri burchakli parallelepiped hajmi?`,a*b*c,[a*b+c,2*(a*b+b*c+a*c),a+b+c].concat(near(a*b*c)),' sm³'); },1),
+      g(L=>{ const r=R(1,lv(L,[10,10,20,50])); return item(`gcircC${r}`,`Radiusi ${r} sm bo'lgan aylana uzunligi (π ≈ 3,14)?`,dec(2*3.14*r),[dec(3.14*r),dec(3.14*r*r),dec(2*3.14*r+3.14),dec(4*3.14*r)],' sm'); },1),
+      g(L=>{ const r=R(1,lv(L,[10,10,15,30])); return item(`gcircS${r}`,`Radiusi ${r} sm bo'lgan doiraning yuzi (π ≈ 3,14)?`,dec(3.14*r*r),[dec(2*3.14*r),dec(3.14*r*2*r*2),dec(3.14*r*r+3.14),dec(6.28*r*r)],' sm²'); },2),
+      g(L=>{ const m=lv(L,[10,20,40,80]),a=R(1,m)*2,h=R(2,m); return item(`gtriS${a}-${h}`,`Asosi ${a} sm, balandligi ${h} sm bo'lgan uchburchak yuzi?`,a*h/2,[a*h,a+h,a*h/4].concat(near(a*h/2)),' sm²'); }),
+      g(L=>{ const x=R(10,170); return item(`gadj${x}`,`Qo'shni burchaklardan biri ${x}°. Ikkinchisi necha gradus?`,180-x,[90-x>0?90-x:x+5,360-x,x].concat(near(180-x,10)),'°'); }),
+      g(L=>{ const a=R(2,lv(L,[0,0,20,40])),b=R(a+1,a+30),h=R(2,30)*2; return item(`gtrap${a}-${b}-${h}`,`Trapetsiyaning asoslari ${a} sm va ${b} sm, balandligi ${h} sm. Yuzi?`,(a+b)*h/2,[(a+b)*h,a*b*h/2,(b-a)*h/2].concat(near((a+b)*h/2)),' sm²'); },2),
+      g(L=>{ const d1=R(2,30)*2,d2=R(2,30); return item(`grhomb${d1}-${d2}`,`Rombning diagonallari ${d1} sm va ${d2} sm. Yuzi?`,d1*d2/2,[d1*d2,d1+d2,2*(d1+d2)].concat(near(d1*d2/2)),' sm²'); },2),
+      g(L=>{ const n=pick([5,6,8,9,10,12,15,18,20]); return item(`gregint${n}`,`Muntazam ${n} burchakli ko'pburchakning bitta ichki burchagi necha gradus?`,(n-2)*180/n,[360/n,(n-2)*180,180-(n-2)*180/n+10,(n-1)*180/n].map(v=>Math.round(v)),'°'); },3),
+      g(L=>{ const r=R(1,10),h=R(2,20); return item(`gcyl${r}-${h}`,`Radiusi ${r} sm, balandligi ${h} sm silindr hajmi (π ≈ 3,14)?`,dec(3.14*r*r*h),[dec(2*3.14*r*h),dec(3.14*r*h),dec(3.14*r*r*h/3),dec(3.14*r*r*h*2)],' sm³'); },3),
+      g(L=>{ const x=R(20,80),y=R(20,80); return item(`gext${x}-${y}`,`Uchburchakning ikki ichki burchagi ${x}° va ${y}°. Uchinchi burchakka qo'shni tashqi burchak necha gradus?`,x+y,[180-x-y,180-x,360-x-y].concat(near(x+y,10)),'°'); },2),
     ],
     phys:[
-      ()=>{ const v=R(2,30),t=R(2,20); return item(`ps${v}-${t}`,`Jism ${v} m/s tezlik bilan ${t} s harakatlandi. Bosib o'tgan yo'li?`,v*t,[v+t,v*t+v].concat(near(v*t)),' m'); },
-      ()=>{ const v=R(2,30),t=R(2,20); return item(`pv${v*t}-${t}`,`Jism ${v*t} m yo'lni ${t} s da bosib o'tdi. Tezligi?`,v,[v*t*t,v+t].concat(near(v,5)),' m/s'); },
-      ()=>{ const m=R(1,50),a=R(1,10); return item(`pF${m}-${a}`,`Massasi ${m} kg jismga ${a} m/s² tezlanish berish uchun qancha kuch kerak?`,m*a,[m+a].concat(near(m*a)),' N'); },
-      ()=>{ const m=R(1,90); return item(`pP${m}`,`Massasi ${m} kg bo'lgan jismning og'irligi (g = 10 m/s²)?`,m*10,[m,m*100,m+10].concat(near(m*10)),' N'); },
-      ()=>{ const r=R(2,50),i=R(1,10); return item(`pU${r}-${i}`,`Qarshiligi ${r} Ω o'tkazgichdan ${i} A tok o'tmoqda. Kuchlanish?`,r*i,[r+i].concat(near(r*i)),' V'); },
-      ()=>{ const r=R(2,30),i=R(1,10); return item(`pI${r*i}-${r}`,`${r*i} V kuchlanishda ${r} Ω qarshilikdan qancha tok o'tadi?`,i,[r*i*r,r].concat(near(i,4)),' A'); },
-      ()=>{ const F=R(2,100),s=R(2,50); return item(`pA${F}-${s}`,`${F} N kuch jismni ${s} m ga ko'chirdi. Bajarilgan ish?`,F*s,[F+s].concat(near(F*s)),' J'); },
-      ()=>{ const t=R(2,20),N=R(5,100); return item(`pN${N*t}-${t}`,`${t} s da ${N*t} J ish bajarildi. Quvvat?`,N,[N*t*t,N+t].concat(near(N,8)),' W'); },
-      ()=>{ const V=R(2,20),rho=pick([1000,800,2700,7800]); return item(`prho${rho*V}-${V}`,`Hajmi ${V} m³, massasi ${rho*V} kg bo'lgan moddaning zichligi?`,rho,[rho/10,rho*V*V,rho+V].concat(near(rho)),' kg/m³'); },
-      ()=>{ const k=R(1,30)*18; return item(`pkmh${k}`,`${k} km/soat necha m/s ga teng?`,k/3.6,[k*3.6,k/36,k/10,k/3.6+5].map(x=>Math.round(x*10)/10),' m/s'); },
-      ()=>{ const m=R(1,20),v=R(1,10)*2; return item(`pEk${m}-${v}`,`Massasi ${m} kg jism ${v} m/s tezlikda. Kinetik energiya (mv²/2)?`,m*v*v/2,[m*v,m*v*v,m*v/2].concat(near(m*v*v/2)),' J'); },
+      g(L=>{ const v=R(2,lv(L,[20,30,60,120])),t=R(2,lv(L,[10,20,60,120])); return item(`ps${v}-${t}`,`Jism ${v} m/s tezlik bilan ${t} s harakatlandi. Bosib o'tgan yo'li?`,v*t,[v+t,v*t+v].concat(near(v*t)),' m'); }),
+      g(L=>{ const v=R(2,30),t=R(2,lv(L,[10,20,40,90])); return item(`pv${v*t}-${t}`,`Jism ${v*t} m yo'lni ${t} s da bosib o'tdi. Tezligi?`,v,[v*t*t,v+t].concat(near(v,5)),' m/s'); }),
+      g(L=>{ const m=R(1,lv(L,[20,50,200,900])),a=R(1,lv(L,[5,10,20,30])); return item(`pF${m}-${a}`,`Massasi ${m} kg jismga ${a} m/s² tezlanish berish uchun qancha kuch kerak?`,m*a,[m+a].concat(near(m*a)),' N'); }),
+      g(L=>{ const m=R(1,lv(L,[50,90,500])); return item(`pP${m}`,`Massasi ${m} kg bo'lgan jismning og'irligi (g = 10 m/s²)?`,m*10,[m,m*100,m+10].concat(near(m*10)),' N'); }),
+      g(L=>{ const r=R(2,lv(L,[20,50,200,500])),i=R(1,lv(L,[5,10,20,40])); return item(`pU${r}-${i}`,`Qarshiligi ${r} Ω o'tkazgichdan ${i} A tok o'tmoqda. Kuchlanish?`,r*i,[r+i].concat(near(r*i)),' V'); },1),
+      g(L=>{ const r=R(2,30),i=R(1,lv(L,[10,10,20,40])); return item(`pI${r*i}-${r}`,`${r*i} V kuchlanishda ${r} Ω qarshilikdan qancha tok o'tadi?`,i,[r*i*r,r].concat(near(i,4)),' A'); },1),
+      g(L=>{ const F=R(2,lv(L,[50,100,500,2000])),s=R(2,lv(L,[20,50,100,300])); return item(`pA${F}-${s}`,`${F} N kuch jismni ${s} m ga ko'chirdi. Bajarilgan ish?`,F*s,[F+s].concat(near(F*s)),' J'); },1),
+      g(L=>{ const t=R(2,lv(L,[10,20,60])),N=R(5,lv(L,[50,100,500])); return item(`pN${N*t}-${t}`,`${t} s da ${N*t} J ish bajarildi. Quvvat?`,N,[N*t*t,N+t].concat(near(N,8)),' W'); },1),
+      g(L=>{ const V=R(2,20),rho=pick([1000,800,2700,7800,11300,900]); return item(`prho${rho*V}-${V}`,`Hajmi ${V} m³, massasi ${rho*V} kg bo'lgan moddaning zichligi?`,rho,[rho/10,rho*V*V,rho+V].concat(near(rho)),' kg/m³'); },1),
+      g(L=>{ const k=R(1,lv(L,[5,10,30,60]))*18; return item(`pkmh${k}`,`${k} km/soat necha m/s ga teng?`,k/3.6,[k*3.6,k/36,k/10,k/3.6+5].map(x=>Math.round(x*10)/10),' m/s'); }),
+      g(L=>{ const m=R(1,lv(L,[10,20,50,200])),v=R(1,10)*2; return item(`pEk${m}-${v}`,`Massasi ${m} kg jism ${v} m/s tezlikda. Kinetik energiya (mv²/2)?`,m*v*v/2,[m*v,m*v*v,m*v/2].concat(near(m*v*v/2)),' J'); },2),
+      g(L=>{ const m=R(1,lv(L,[10,10,50,200])),h=R(2,lv(L,[10,10,50,200])); return item(`pEp${m}-${h}`,`Massasi ${m} kg jism ${h} m balandlikda. Potensial energiyasi (g = 10 m/s²)?`,m*10*h,[m*h,m*10+h,m*h/2].concat(near(m*10*h)),' J'); },1),
+      g(L=>{ const t=R(1,lv(L,[0,0,6,12])); return item(`pfall${t}`,`Jism ${t} s erkin tushdi (g = 10 m/s², boshlang'ich tezlik 0). Qancha balandlikdan tushgan?`,5*t*t,[10*t,10*t*t,5*t].concat(near(5*t*t)),' m'); },2),
+      g(L=>{ const S=pick([1,2,4,5,10]),p=R(2,lv(L,[0,0,50,500]))*10; return item(`ppres${p*S}-${S}`,`${p*S} N kuch ${S} m² yuzaga ta'sir qilmoqda. Bosim?`,p,[p*S*S,p*S,p+S].concat(near(p)),' Pa'); },2),
+      g(L=>{ const a=R(2,60),b=R(2,60); return item(`pser${a}-${b}`,`${a} Ω va ${b} Ω rezistorlar ketma-ket ulangan. Umumiy qarshilik?`,a+b,[a*b,Math.abs(a-b),Math.round(a*b/(a+b))].concat(near(a+b)),' Ω'); },2),
+      g(L=>{ const r=R(1,50)*2,n=pick([2,4,5]); return item(`ppar${r}-${n}`,`Har biri ${r*n} Ω bo'lgan ${n} ta bir xil rezistor parallel ulangan. Umumiy qarshilik?`,r,[r*n*n,r*n,r*2].concat(near(r)),' Ω'); },3),
+      g(L=>{ const m=R(1,10),dt=R(2,40); return item(`pheat${m}-${dt}`,`${m} kg suvni ${dt} °C ga isitish uchun qancha issiqlik kerak (c = 4200 J/(kg·°C))?`,4200*m*dt,[4200*m,4200*dt,420*m*dt,42000*m*dt],' J'); },3),
     ],
     cs:[
-      ()=>{ const n=R(2,255); return item(`cbin${n}`,`${n} sonining ikkilik sanoq tizimidagi ko'rinishi?`,n.toString(2),[(n+1).toString(2),(n-1).toString(2),(n^1).toString(2),(n+2).toString(2),(n<<1).toString(2)]); },
-      ()=>{ const n=R(2,127); return item(`cdec${n}`,`Ikkilik ${n.toString(2)} sonini o'nlik sanoq tizimiga o'tkazing`,n,near(n,6).concat([parseInt(n.toString(2),10)%1000])); },
-      ()=>{ const k=R(1,64); return item(`cbyte${k}`,`${k} bayt necha bitga teng?`,k*8,[k*10,k*4,k*16,k*8+8],' bit'); },
-      ()=>{ const k=pick([1,2,3,4,5,8,10,16]); return item(`ckb${k}`,`${k} KB necha baytga teng?`,k*1024,[k*1000,k*512,k*2048,k*100],' bayt'); },
-      ()=>{ const k=pick([1,2,4,8,16,32]); return item(`cmb${k}`,`${k} GB necha MB ga teng?`,k*1024,[k*1000,k*512,k*100,k*2048],' MB'); },
-      ()=>{ const n=R(1,8); return item(`cbits${n}`,`${n} bit yordamida nechta turli qiymatni ifodalash mumkin?`,Math.pow(2,n),[n*2,n*n,Math.pow(2,n)-1,Math.pow(2,n+1)]); },
-      ()=>{ const n=R(10,255); return item(`chex${n}`,`${n} sonining o'n oltilik (hex) ko'rinishi?`,n.toString(16).toUpperCase(),[(n+1).toString(16).toUpperCase(),(n+16).toString(16).toUpperCase(),(n-1).toString(16).toUpperCase(),n.toString(8)]); },
+      g(L=>{ const k=R(1,lv(L,[16,64,512])); return item(`cbyte${k}`,`${k} bayt necha bitga teng?`,k*8,[k*10,k*4,k*16,k*8+8],' bit'); }),
+      g(L=>{ const k=pick([1,2,3,4,5,8,10,16]); return item(`ckb${k}`,`${k} KB necha baytga teng?`,k*1024,[k*1000,k*512,k*2048,k*100],' bayt'); }),
+      g(L=>{ const k=pick([1,2,4,8,16,32]); return item(`cmb${k}`,`${k} GB necha MB ga teng?`,k*1024,[k*1000,k*512,k*100,k*2048],' MB'); }),
+      g(L=>{ const n=R(2,lv(L,[15,31,255,1023])); return item(`cbin${n}`,`${n} sonining ikkilik sanoq tizimidagi ko'rinishi?`,n.toString(2),[(n+1).toString(2),(n-1).toString(2),(n^1).toString(2),(n+2).toString(2),(n<<1).toString(2)]); },1),
+      g(L=>{ const n=R(2,lv(L,[15,31,127,1023])); return item(`cdec${n}`,`Ikkilik ${n.toString(2)} sonini o'nlik sanoq tizimiga o'tkazing`,n,near(n,6).concat([parseInt(n.toString(2),10)%1000])); },1),
+      g(L=>{ const n=R(1,lv(L,[4,8,10,16])); return item(`cbits${n}`,`${n} bit yordamida nechta turli qiymatni ifodalash mumkin?`,Math.pow(2,n),[n*2,n*n,Math.pow(2,n)-1,Math.pow(2,n+1)]); }),
+      g(L=>{ const n=R(10,lv(L,[0,0,255,4095])); return item(`chex${n}`,`${n} sonining o'n oltilik (hex) ko'rinishi?`,n.toString(16).toUpperCase(),[(n+1).toString(16).toUpperCase(),(n+16).toString(16).toUpperCase(),(n-1).toString(16).toUpperCase(),n.toString(8)]); },2),
+      g(L=>{ const a=R(3,63),b=R(3,63); return item(`cbadd${a}+${b}`,`Ikkilik sanoq tizimida: ${a.toString(2)} + ${b.toString(2)} = ?`,(a+b).toString(2),[(a+b+1).toString(2),(a+b-1).toString(2),(a^b).toString(2),(a|b).toString(2),(a+b+2).toString(2)]); },3),
+      g(L=>{ const N=R(3,2000),bits=Math.ceil(Math.log2(N)); return item(`cneed${N}`,`${N} ta turli belgini kodlash uchun kamida necha bit kerak?`,bits,[bits+1,bits-1,bits+2,Math.ceil(N/8)].filter(v=>v>0),' bit'); },3),
+      g(L=>{ const x=R(8,511); return item(`coct${x}`,`${x} sonining sakkizlik sanoq tizimidagi ko'rinishi?`,x.toString(8),[(x+1).toString(8),x.toString(16),(x-1).toString(8),(x+8).toString(8)]); },2),
     ],
     logic:[
-      ()=>{ const a=R(1,30),d=R(2,15); const s=[0,1,2,3,4].map(i=>a+i*d); return item(`lar${a}-${d}`,`${s.join(', ')}, ? Keyingi son?`,a+5*d,near(a+5*d,d).concat([a+4*d+1,a+6*d])); },
-      ()=>{ const a=R(1,5),r=R(2,4); const s=[0,1,2,3].map(i=>a*Math.pow(r,i)); return item(`lgeo${a}-${r}`,`${s.join(', ')}, ? Keyingi son?`,a*Math.pow(r,4),[a*Math.pow(r,3)*2+1,a*Math.pow(r,3)+r,a*Math.pow(r,4)+a,a*Math.pow(r,3)*(r+1)]); },
-      ()=>{ const k=R(1,8); const s=[0,1,2,3].map(i=>(k+i)*(k+i)); return item(`lsq${k}`,`${s.join(', ')}, ? Keyingi son?`,(k+4)*(k+4),near((k+4)*(k+4),8)); },
-      ()=>{ const days=["Dushanba","Seshanba","Chorshanba","Payshanba","Juma","Shanba","Yakshanba"]; const d=R(0,6),n=R(8,400); return item(`lday${d}-${n}`,`Bugun ${days[d].toLowerCase()}. ${n} kundan keyin haftaning qaysi kuni bo'ladi?`,days[(d+n)%7],others(days,days[(d+n)%7])); },
-      ()=>{ const h=R(1,11); const ang=Math.min(30*h,360-30*h); return item(`lclock${h}`,`Soat roppa-rosa ${h}:00 da soat va minut millari orasidagi kichik burchak?`,ang,[30*h===ang?360-ang:30*h,ang+30,Math.abs(ang-30)||45,90].filter(v=>v!==ang),'°'); },
-      ()=>{ const m=pick([3,4,5,6,7,9]); const base=R(1,9); const good=[0,1,2,3].map(i=>m*(base+i*R(1,2))); const bad=m*R(2,20)+R(1,m-1); return item(`lodd${m}-${good.join('.')}-${bad}`,`Qaysi son ortiqcha: ${shuffle(good.concat([bad])).join(', ')}?`,bad,good); },
-      ()=>{ const a=R(5,15),d=R(2,8); return item(`lage${a}-${d}`,`Ali ${a} yoshda, akasi undan ${d} yosh katta. 5 yildan keyin akasi necha yoshda bo'ladi?`,a+d+5,[a+d,a+5,a+d+10,a+d+4]); },
-      ()=>{ const n=R(3,12); return item(`lhand${n}`,`${n} kishi bir-biri bilan bir martadan qo'l berib ko'rishdi. Jami nechta qo'l berish bo'ldi?`,n*(n-1)/2,[n*(n-1),n*n,n*2,n*(n-1)/2+n]); },
-      ()=>{ const a=R(2,9),b=R(2,9); const s=[a,b,a+b,a+2*b]; return item(`lfib${a}-${b}`,`${s.join(', ')}, ? (har son oldingi ikkitasining yig'indisi)`,2*a+3*b,near(2*a+3*b,5)); },
+      g(L=>{ const a=R(1,lv(L,[20,30,99,999])),d=L>=2?pick([-1,1])*R(3,lv(L,[0,0,25,99])):R(2,lv(L,[5,15])); const s=[0,1,2,3,4].map(i=>a+i*d); return item(`lar${a}-${d}`,`${s.join(', ')}, ? Keyingi son?`,a+5*d,near(a+5*d,Math.abs(d)).concat([a+4*d+1,a+6*d])); }),
+      g(L=>{ const a=R(1,5),r=R(2,lv(L,[3,4,5,6])); const s=[0,1,2,3].map(i=>a*Math.pow(r,i)); return item(`lgeo${a}-${r}`,`${s.join(', ')}, ? Keyingi son?`,a*Math.pow(r,4),[a*Math.pow(r,3)*2+1,a*Math.pow(r,3)+r,a*Math.pow(r,4)+a,a*Math.pow(r,3)*(r+1)]); },1),
+      g(L=>{ const k=R(1,lv(L,[8,8,15,30])); const s=[0,1,2,3].map(i=>(k+i)*(k+i)); return item(`lsq${k}`,`${s.join(', ')}, ? Keyingi son?`,(k+4)*(k+4),near((k+4)*(k+4),8)); },1),
+      g(L=>{ const days=["Dushanba","Seshanba","Chorshanba","Payshanba","Juma","Shanba","Yakshanba"]; const d=R(0,6),n=R(...lv(L,[[2,6],[8,60],[60,400],[400,3000]])); return item(`lday${d}-${n}`,`Bugun ${days[d].toLowerCase()}. ${n} kundan keyin haftaning qaysi kuni bo'ladi?`,days[(d+n)%7],others(days,days[(d+n)%7])); }),
+      g(L=>{ const h=R(1,11),m=L>=3?pick([30,20,40,10,50]):0; let a=Math.abs(30*h-5.5*m); a=Math.min(a,360-a); const tt=`${h}:${String(m).padStart(2,'0')}`;
+        return item(`lclock${tt}`,`Soat roppa-rosa ${tt} da soat va minut millari orasidagi kichik burchak?`,a,[360-a===a?a+30:360-a,a+30,Math.abs(a-30)||45,a+15,90].filter(v=>v!==a),'°'); },1),
+      g(L=>{ const m=pick([3,4,5,6,7,9]); const base=R(1,9); const good=[0,1,2,3].map(i=>m*(base+i*R(1,2))); const bad=m*R(2,20)+R(1,m-1); return item(`lodd${m}-${good.join('.')}-${bad}`,`Qaysi son ortiqcha: ${shuffle(good.concat([bad])).join(', ')}?`,bad,good); },1),
+      g(L=>{ const a=R(5,15),d=R(2,8),y=lv(L,[5,5,7,12]); return item(`lage${a}-${d}-${y}`,`Ali ${a} yoshda, akasi undan ${d} yosh katta. ${y} yildan keyin akasi necha yoshda bo'ladi?`,a+d+y,[a+d,a+y,a+d+y+5,a+d+y-1]); }),
+      g(L=>{ const n=R(3,lv(L,[6,12,25,60])); return item(`lhand${n}`,`${n} kishi bir-biri bilan bir martadan qo'l berib ko'rishdi. Jami nechta qo'l berish bo'ldi?`,n*(n-1)/2,[n*(n-1),n*n,n*2,n*(n-1)/2+n]); },1),
+      g(L=>{ const a=R(2,lv(L,[9,9,20,50])),b=R(2,lv(L,[9,9,20,50])); const s=[a,b,a+b,a+2*b]; return item(`lfib${a}-${b}`,`${s.join(', ')}, ? (har son oldingi ikkitasining yig'indisi)`,2*a+3*b,near(2*a+3*b,5)); },2),
+      g(L=>{ const a=R(2,9),k=R(1,9); const s=[a,2*a,2*a+k,4*a+2*k,4*a+3*k]; return item(`lalt${a}-${k}`,`${s.join(', ')}, ? Keyingi son?`,8*a+6*k,[4*a+4*k,8*a+3*k,8*a+7*k,8*a+4*k]); },3),
+      g(L=>{ const w=R(2,9),d=R(2,6),k=R(2,6); return item(`lwork${w}-${d}-${k}`,`${w} ta ishchi bir ishni ${d*k} kunda tugatadi. ${w*k} ta ishchi shu ishni necha kunda tugatadi?`,d,[d*k*k,d+k,d*k,Math.max(1,d-1)]); },3),
+      g(L=>{ const n=R(4,lv(L,[0,0,8,12])); const f=[1,1,2,6,24,120,720,5040,40320,362880,3628800,39916800,479001600][n]; return item(`lperm${n}`,`${n} ta turli kitobni javonga necha xil usulda qatorlab terish mumkin?`,f,[n*n,n*(n-1),f/n,2*f]); },2),
     ],
   };
 
@@ -209,6 +267,185 @@ const QGen = (function(){
     ["Eng katta sutemizuvchi hayvon?","Ko'k kit",["Fil","Jirafa","Oq ayiq"]],
   ];
 
+  // Harder hand-checked questions: [question, correct, [3 wrong], difficulty 1..3]
+  const HARD={
+    onatili:[
+      ["O'zbek tilida nechta kelishik bor?","6 ta",["5 ta","7 ta","8 ta"],2],
+      ["Qaratqich kelishigining qo'shimchasi qaysi?","-ning",["-ni","-ga","-dan"],2],
+      ["Tushum kelishigining qo'shimchasi qaysi?","-ni",["-ning","-da","-ga"],2],
+      ["Chiqish kelishigining qo'shimchasi qaysi?","-dan",["-da","-ga","-ning"],2],
+      ["O'rin-payt kelishigining qo'shimchasi qaysi?","-da",["-dan","-ni","-ga"],2],
+      ["Jo'nalish kelishigining qo'shimchasi qaysi?","-ga",["-da","-ni","-dan"],2],
+      ["Gapning bosh bo'laklari qaysilar?","Ega va kesim",["To'ldiruvchi va hol","Aniqlovchi va hol","Ega va to'ldiruvchi"],1],
+      ["Gapning ikkinchi darajali bo'laklari qaysilar?","To'ldiruvchi, aniqlovchi, hol",["Ega va kesim","Ega, kesim, hol","Undalma va kirish so'z"],2],
+      ["\"Men kitobni o'qidim\" gapida \"kitobni\" qaysi gap bo'lagi?","To'ldiruvchi",["Ega","Kesim","Hol"],2],
+      ["\"Ishchi\" so'zidagi \"-chi\" qanday qo'shimcha?","So'z yasovchi",["Kelishik qo'shimchasi","Ko'plik qo'shimchasi","Egalik qo'shimchasi"],3],
+      ["\"Kitoblar\" so'zidagi \"-lar\" qanday qo'shimcha?","Ko'plik qo'shimchasi",["So'z yasovchi","Kelishik qo'shimchasi","Egalik qo'shimchasi"],1],
+      ["O'zbek tilida nechta unli tovush bor?","6 ta",["5 ta","8 ta","10 ta"],2],
+      ["Qo'shma gap turlari qaysilar?","Bog'langan, ergashgan, bog'lovchisiz",["Sodda va murakkab","Darak, so'roq, buyruq","Yoyiq va yig'iq"],3],
+      ["Maqsadiga ko'ra gap turlari qaysilar?","Darak, so'roq, buyruq",["Sodda va qo'shma","Yoyiq va yig'iq","Bog'langan va ergashgan"],2],
+      ["Bir xil yoziladigan, lekin ma'nosi boshqa-boshqa so'zlar qanday ataladi?","Omonimlar",["Sinonimlar","Antonimlar","Paronimlar"],2],
+    ],
+    adabiyot:[
+      ["\"Xamsa\" nechta dostondan iborat?","5 ta",["3 ta","4 ta","7 ta"],1],
+      ["Qaysi doston \"Xamsa\"ga kirmaydi?","Lison ut-tayr",["Hayrat ul-abror","Farhod va Shirin","Layli va Majnun"],3],
+      ["Alisher Navoiy forsiy she'rlarini qaysi taxallus bilan yozgan?","Foniy",["Navoiy","Nodira","Zebunniso"],2],
+      ["Alisher Navoiy qaysi shaharda tug'ilgan?","Hirot",["Samarqand","Buxoro","Andijon"],1],
+      ["\"O'tkan kunlar\" romanining bosh qahramoni kim?","Otabek",["Anvar","Yo'lchi","Mirzo Ulug'bek"],1],
+      ["Cho'lponning asl ismi nima?","Abdulhamid Sulaymon o'g'li",["Abdulla Qodiriy","Muso Toshmuhammad o'g'li","Abdulla Avloniy"],3],
+      ["Oybekning asl ismi nima?","Muso Toshmuhammad o'g'li",["Abdulhamid Sulaymon o'g'li","Hamid Olimjon","G'afur G'ulom"],3],
+      ["\"Shum bola\" asarining janri?","Qissa",["Roman","Doston","G'azal"],2],
+      ["Ruboiy necha misradan iborat?","4 ta",["2 ta","6 ta","8 ta"],2],
+      ["G'azalning birinchi bayti qanday ataladi?","Matla'",["Maqta'","Radif","Qofiya"],3],
+      ["G'azalning so'nggi bayti qanday ataladi?","Maqta'",["Matla'","Radif","Tuyuq"],3],
+      ["\"Ruhlar isyoni\" dostoni muallifi?","Erkin Vohidov",["Abdulla Oripov","Hamid Olimjon","Muhammad Yusuf"],2],
+      ["\"Yulduzli tunlar\" romani kim haqida?","Zahiriddin Muhammad Bobur",["Amir Temur","Alisher Navoiy","Mirzo Ulug'bek"],2],
+      ["Mahmudxo'ja Behbudiyning mashhur dramasi?","Padarkush",["Boy ila xizmatchi","Mehrobdan chayon","Kecha va kunduz"],3],
+      ["\"Kecha va kunduz\" romani muallifi?","Cho'lpon",["Oybek","Abdulla Qodiriy","Abdulla Qahhor"],1],
+    ],
+    hist:[
+      ["Muhammad Shayboniyxon qaysi sulolaga asos solgan?","Shayboniylar",["Temuriylar","Ashtarxoniylar","Mang'itlar"],2],
+      ["Buxoro amirligida hukmronlik qilgan sulola?","Mang'itlar",["Minglar","Qo'ng'irotlar","Temuriylar"],3],
+      ["Xiva xonligidagi so'nggi hukmron sulola?","Qo'ng'irotlar",["Mang'itlar","Minglar","Shayboniylar"],3],
+      ["Qo'qon xonligida hukmronlik qilgan sulola?","Minglar",["Mang'itlar","Qo'ng'irotlar","Ashtarxoniylar"],3],
+      ["Qo'qon xonligi Rossiya imperiyasi tomonidan qaysi yili tugatilgan?","1876",["1865","1868","1920"],3],
+      ["Somoniylar davlatining poytaxti qaysi shahar bo'lgan?","Buxoro",["Samarqand","Marv","Urganch"],2],
+      ["Mirzo Ulug'bekning mashhur astronomik asari?","Ziji jadidi Ko'ragoniy",["Tib qonunlari","Boburnoma","Qutadg'u bilig"],3],
+      ["Registondagi Ulug'bek madrasasi qachon qurilgan?","1417–1420-yillarda",["1370–1375-yillarda","1500–1505-yillarda","1619–1636-yillarda"],3],
+      ["Jadidchilik harakatining yetakchilaridan biri kim?","Mahmudxo'ja Behbudiy",["Amir Temur","Shayboniyxon","Alisher Navoiy"],2],
+      ["Turkiston muxtoriyati qaysi yili e'lon qilingan?","1917",["1905","1924","1991"],3],
+      ["Amir Temur qaysi yili hokimiyatni qo'lga olib, Samarqandni poytaxt qilgan?","1370",["1336","1405","1395"],3],
+      ["Temuriylar davrida Movarounnahrni uzoq yillar boshqargan olim-hukmdor?","Mirzo Ulug'bek",["Husayn Boyqaro","Bobur","Shohruh"],2],
+    ],
+    worldhist:[
+      ["\"Buyuk erkinliklar xartiyasi\" (Magna Carta) qaysi davlatda qabul qilingan?","Angliya",["Fransiya","Ispaniya","Germaniya"],3],
+      ["Yuz yillik urush qaysi davlatlar o'rtasida bo'lgan?","Angliya va Fransiya",["Rossiya va Turkiya","Ispaniya va Portugaliya","Germaniya va Avstriya"],2],
+      ["Uyg'onish davri (Renessans) qaysi mamlakatda boshlangan?","Italiya",["Angliya","Fransiya","Gretsiya"],2],
+      ["Kitob bosish dastgohini Yevropada kim ixtiro qilgan?","Iogann Gutenberg",["Leonardo da Vinchi","Galileo Galiley","Isaak Nyuton"],2],
+      ["Martin Lyuter boshlagan diniy harakat qanday ataladi?","Reformatsiya",["Renessans","Salib yurishlari","Inkvizitsiya"],3],
+      ["Pyotr I asos solgan shahar?","Sankt-Peterburg",["Moskva","Kiyev","Novgorod"],2],
+      ["Birinchi jahon urushiga bahona bo'lgan voqea qaysi shaharda yuz bergan?","Sarayevo",["Berlin","Vena","Parij"],3],
+      ["Meyji islohotlari qaysi davlatda o'tkazilgan?","Yaponiya",["Xitoy","Koreya","Hindiston"],3],
+      ["\"Sovuq urush\" asosan qaysi davlatlar o'rtasidagi qarama-qarshilik edi?","AQSH va SSSR",["Angliya va Fransiya","Xitoy va Yaponiya","Germaniya va Italiya"],2],
+      ["Rim imperiyasining birinchi imperatori kim?","Oktavian Avgust",["Yuliy Sezar","Neron","Konstantin"],3],
+      ["Qadimgi Bobil podshohi Hammurapi nima bilan mashhur?","Qonunlar to'plami bilan",["Piramidalar qurdirgani bilan","Olimpiya o'yinlarini boshlagani bilan","Ipak yo'lini ochgani bilan"],3],
+      ["Yevropa Ittifoqining asosiy valyutasi?","Yevro",["Dollar","Funt sterling","Frank"],1],
+    ],
+    geo:[
+      ["Dunyodagi eng baland cho'qqi?","Everest (Jomolungma)",["Elbrus","Kilimanjaro","Monblan"],1],
+      ["O'zbekistondagi eng baland nuqta?","Hazrati Sulton cho'qqisi",["Chimyon","Katta Chimyon","Beshtor"],3],
+      ["Eng katta okean?","Tinch okeani",["Atlantika okeani","Hind okeani","Shimoliy Muz okeani"],1],
+      ["Eng katta qit'a (materik)?","Yevrosiyo",["Afrika","Shimoliy Amerika","Antarktida"],1],
+      ["Orol dengiziga quyiladigan ikki daryo?","Amudaryo va Sirdaryo",["Zarafshon va Chirchiq","Volga va Ural","Ili va Chu"],2],
+      ["O'zbekiston nechta davlat bilan chegaradosh?","5 ta",["3 ta","4 ta","6 ta"],2],
+      ["Dengizga chiqish uchun kamida ikki davlatni kesib o'tish kerak bo'lgan davlatlar: O'zbekiston va ...?","Lixtenshteyn",["Shveytsariya","Mongoliya","Qozog'iston"],3],
+      ["Qizilqum cho'li qaysi daryolar oralig'ida joylashgan?","Amudaryo va Sirdaryo",["Zarafshon va Qashqadaryo","Chirchiq va Ohangaron","Sirdaryo va Chu"],3],
+      ["Dunyodagi eng katta issiq cho'l?","Sahroi Kabir",["Qizilqum","Gobi","Atakama"],2],
+      ["Dunyodagi eng chuqur ko'l?","Baykal",["Kaspiy","Issiqko'l","Viktoriya"],2],
+      ["Ekvator qaysi materikni kesib o'tmaydi?","Avstraliya",["Afrika","Janubiy Amerika","Osiyo (orollar)"],3],
+      ["Farg'ona vodiysidan qaysi yirik daryo oqib o'tadi?","Sirdaryo",["Amudaryo","Zarafshon","Qashqadaryo"],2],
+      ["Hozir aholisi eng ko'p davlat (2023-yildan beri)?","Hindiston",["Xitoy","AQSH","Indoneziya"],2],
+    ],
+    chem:[
+      ["Suvning molyar massasi?","18 g/mol",["16 g/mol","20 g/mol","10 g/mol"],2],
+      ["pH = 7 bo'lgan muhit qanday?","Neytral",["Kislotali","Ishqoriy","Kuchli kislotali"],2],
+      ["Kislotalar lakmusni qanday rangga bo'yaydi?","Qizil",["Ko'k","Yashil","Rangsiz"],2],
+      ["Ishqorlar fenolftaleinni qanday rangga bo'yaydi?","Pushti (malina rang)",["Rangsiz qoladi","Sariq","Ko'k"],3],
+      ["Avogadro soni taxminan nechaga teng?","6,02·10²³",["3,14·10²³","9,8·10²³","1,6·10⁻¹⁹"],3],
+      ["Kimyoviy elementlar davriy jadvalini kim yaratgan?","D. I. Mendeleyev",["M. Lomonosov","A. Lavuaze","D. Dalton"],1],
+      ["Eng yengil gaz qaysi?","Vodorod",["Geliy","Kislorod","Azot"],1],
+      ["Havo tarkibida eng ko'p bo'lgan gaz?","Azot",["Kislorod","Karbonat angidrid","Argon"],2],
+      ["Olmos qaysi elementning allotropik shakli?","Uglerod",["Kremniy","Bor","Oltingugurt"],2],
+      ["NaCl moddasida qanday kimyoviy bog' bor?","Ion bog'",["Kovalent qutbsiz","Metall bog'","Vodorod bog'"],3],
+      ["H₂ molekulasidagi kimyoviy bog' turi?","Kovalent qutbsiz",["Ion bog'","Kovalent qutbli","Metall bog'"],3],
+      ["Inert (nodir) gazlar davriy jadvalning qaysi guruhida?","VIII A (18-guruh)",["I A (1-guruh)","VII A (17-guruh)","II A (2-guruh)"],3],
+      ["Temir zanglashi uchun nima zarur?","Kislorod va namlik",["Faqat issiqlik","Faqat yorug'lik","Azot va vodorod"],2],
+    ],
+    bio:[
+      ["DNK qisqartmasi nimani bildiradi?","Dezoksiribonuklein kislota",["Ribonuklein kislota","Aminokislota","Adenozin trifosfat"],2],
+      ["Odam yuragi nechta kameradan iborat?","4 ta",["2 ta","3 ta","5 ta"],1],
+      ["Insulin qaysi bezda ishlab chiqariladi?","Oshqozon osti bezida",["Qalqonsimon bezda","Jigarda","Buyrak usti bezida"],3],
+      ["Qaysi organoid faqat o'simlik hujayrasida bo'ladi?","Xloroplast",["Mitoxondriya","Yadro","Ribosoma"],2],
+      ["Katta yoshli odam skeletida taxminan nechta suyak bor?","206 ta",["106 ta","306 ta","412 ta"],2],
+      ["Odam tanasidagi eng uzun suyak?","Son suyagi",["Yelka suyagi","Umurtqa","Qovurg'a"],2],
+      ["Evolyutsiya nazariyasi muallifi?","Charlz Darvin",["Gregor Mendel","Lui Paster","Ibn Sino"],1],
+      ["Irsiyat qonunlarini kashf etgan olim?","Gregor Mendel",["Charlz Darvin","Lui Paster","Robert Kox"],3],
+      ["Penitsillinni kim kashf etgan?","Aleksandr Fleming",["Lui Paster","Robert Kox","Edvard Jenner"],3],
+      ["AB0 tizimi bo'yicha odamda nechta qon guruhi bor?","4 ta",["2 ta","3 ta","8 ta"],2],
+      ["Fotosintez hujayraning qaysi qismida boradi?","Xloroplastlarda",["Mitoxondriyalarda","Yadroda","Hujayra qobig'ida"],2],
+    ],
+    eng:[
+      ["She ___ to school every day.","goes",["go","going","gone"],1],
+      ["I ___ my homework yesterday.","did",["do","does","done"],1],
+      ["\"Child\" so'zining ko'plik shakli?","children",["childs","childes","childrens"],1],
+      ["\"Mouse\" so'zining ko'plik shakli?","mice",["mouses","mices","mouse"],2],
+      ["\"Tooth\" so'zining ko'plik shakli?","teeth",["tooths","teeths","toothes"],2],
+      ["\"Good\" so'zining qiyosiy darajasi?","better",["gooder","best","more good"],2],
+      ["\"Bad\" so'zining orttirma darajasi?","the worst",["the baddest","the worse","the most bad"],2],
+      ["If I ___ rich, I would travel the world.","were",["am","will be","be"],3],
+      ["She has lived here ___ 2010.","since",["for","from","during"],3],
+      ["I have been waiting ___ two hours.","for",["since","during","from"],3],
+      ["\"Write\" fe'lining III shakli (Past Participle)?","written",["wrote","writed","writing"],3],
+      ["\"Go\" fe'lining III shakli (Past Participle)?","gone",["went","goed","going"],2],
+      ["He ___ TV when I called him.","was watching",["watched","is watching","watches"],3],
+      ["This book ___ by millions of people.","is read",["reads","is reading","read"],3],
+    ],
+    rus:[
+      ["\"Окно\" so'zi qaysi rodda?","Средний род",["Мужской род","Женский род","Rodi yo'q"],2],
+      ["\"Стол\" so'zi qaysi rodda?","Мужской род",["Женский род","Средний род","Rodi yo'q"],2],
+      ["\"Книга\" so'zi qaysi rodda?","Женский род",["Мужской род","Средний род","Rodi yo'q"],1],
+      ["\"Друг\" so'zining ko'plik shakli?","друзья",["други","друга","друзи"],3],
+      ["\"Человек\" so'zining ko'plik shakli?","люди",["человеки","человека","людьи"],2],
+      ["\"Ребёнок\" so'zining ko'plik shakli?","дети",["ребёнки","ребята","детя"],2],
+      ["Rus tilida nechta kelishik (падеж) bor?","6 ta",["4 ta","5 ta","7 ta"],2],
+      ["Rus alifbosida nechta harf bor?","33 ta",["26 ta","30 ta","35 ta"],2],
+      ["\"Я читаю книгу\" gapida \"книгу\" qaysi kelishikda?","Винительный",["Именительный","Родительный","Дательный"],3],
+      ["\"Я ___ в школу\" (идти fe'li, hozirgi zamon)","иду",["идёт","идём","идут"],2],
+    ],
+    huquq:[
+      ["O'zbekiston Respublikasi Konstitutsiyasi (2023-yilgi tahrir) nechta moddadan iborat?","155 ta",["128 ta","100 ta","175 ta"],3],
+      ["O'zbekiston Respublikasi Prezidentligiga nomzod kamida necha yoshda bo'lishi kerak?","35 yosh",["25 yosh","30 yosh","40 yosh"],3],
+      ["Oliy Majlis Qonunchilik palatasi deputatlari soni?","150 ta",["100 ta","120 ta","250 ta"],3],
+      ["Jinoiy javobgarlik umumiy qoidaga ko'ra necha yoshdan boshlanadi?","16 yoshdan",["14 yoshdan","18 yoshdan","12 yoshdan"],3],
+    ],
+  };
+  const LEVELS_D={  // what share of a match comes from each difficulty, per player level
+    0:[0.70,0.30,0,0], 1:[0.25,0.50,0.25,0], 2:[0.05,0.30,0.45,0.20], 3:[0,0.15,0.40,0.45]
+  };
+  // difficulty of the table/bank questions (0..3), decided from their id
+  const FAMOUS_CAP=["O'zbekiston","Qozog'iston","Qirg'iziston","Tojikiston","Turkmaniston","Rossiya","Turkiya","Xitoy","Yaponiya","Germaniya","Fransiya","Buyuk Britaniya","Italiya","AQSH","Misr","Hindiston","Ispaniya","Janubiy Koreya","Kanada"];
+  function diffOf(subj,id){
+    let m;
+    if(/^qlogic/.test(id)) return 1;
+    if(/^q/.test(id)) return 0;                                 // basic hand-written bank
+    if(/^lb/.test(id)) return 1;
+    if((m=/^ch([snz])(.+)$/.exec(id))){ const e=ELEMENTS.find(x=>x[0]===m[2]); const z=e?e[2]:99;
+      if(m[1]==='s') return z<=20?0:1; if(m[1]==='n') return z<=20?1:2; return z<=10?1:z<=20?2:3; }
+    if((m=/^ch([fg])(\d+)$/.exec(id))){ const i=+m[2], b=i<3?0:i<10?1:2; return m[1]==='f'?b:Math.min(3,b+1); }
+    if((m=/^g(cap|cou|con)(\d+)$/.exec(id))){ const c=COUNTRIES_T[+m[2]], fam=FAMOUS_CAP.includes(c[0]); const b=fam?0:(c[2]==='Yevropa'||c[2]==='Osiyo')?1:2; return m[1]==='cap'?b:m[1]==='cou'?Math.min(3,b+1):(fam?0:1); }
+    if(/^greg/.test(id)) return 1;
+    if((m=/^e(en|uz)(\d+)$/.exec(id))){ const i=+m[2], b=i<44?0:1; return m[1]==='en'?b:b+1; }
+    if((m=/^eirr(\d+)$/.exec(id))) return +m[1]<6?2:3;
+    if((m=/^r(ru|uz)(\d+)$/.exec(id))){ const i=+m[2], b=i<46?0:1; return m[1]==='ru'?b:b+1; }
+    if((m=/^opos(Ot|Sifat|Fe'l|Son|Olmosh|Ravish)/.exec(id))) return {Ot:0,Sifat:0,"Fe'l":0,Son:1,Olmosh:1,Ravish:2}[m[1]];
+    if(/^oant/.test(id)) return 1; if(/^osyn/.test(id)) return 2;
+    if((m=/^abk(\d+)$/.exec(id))){ const i=+m[1]; return [0,3,4,8,9,22,23,27].includes(i)?0:[1,2,5,6,7,13,14,18,19,20,24,25,26,28].includes(i)?1:2; }
+    if(/^aau/.test(id)) return 2;
+    if((m=/^hy(\d+)$/.exec(id))){ const i=+m[1]; return [0,14,18].includes(i)?1:[1,2,3,13,15,16].includes(i)?2:3; }
+    if((m=/^hc(\d+)$/.exec(id))){ const i=+m[1]; return [0,1,2,3,14,18].includes(i)?1:2; }
+    if((m=/^hx(\d+)$/.exec(id))){ const i=+m[1]; return [0,4,6,13].includes(i)?0:[3,5,7,9,12].includes(i)?2:1; }
+    if(/^hp/.test(id)) return 1;
+    if((m=/^wy(\d+)$/.exec(id))){ const i=+m[1]; return [0,1,2,3,4,9,10].includes(i)?1:[5,6,12,13,14,18,20,21].includes(i)?3:2; }
+    if((m=/^wc(\d+)$/.exec(id))){ const i=+m[1]; return [0,1,2,3,4,9,10].includes(i)?1:2; }
+    if((m=/^wx(\d+)$/.exec(id))){ const i=+m[1]; return [2,5,7,11].includes(i)?0:[8,10].includes(i)?2:1; }
+    if((m=/^ban(\d+)$/.exec(id))){ const i=+m[1]; return [3,6,7,13,15,16,17].includes(i)?0:i===2?2:1; }
+    if(/^borg/.test(id)) return 0; if(/^borf/.test(id)) return 1; if(/^bvit/.test(id)) return 1;
+    if((m=/^bx(\d+)$/.exec(id))) return [1,2,2,3,1,1,2,2,1,0][+m[1]] ?? 1;
+    if((m=/^hq(\d+)$/.exec(id))){ return [0,0,2,1,1,1,1,1,2,0,1,0,3,3,3,2,3,3,3,1,2,1,1,0][+m[1]] ?? 1; }
+    if((m=/^hd\w+?-(\d)$/.exec(id))) return +m[1];
+    return 1;
+  }
+
   function tableItems(subj){
     const out=[];
     const add=(id,q,c,pool)=>{ const it=item(id,q,c,others(pool,c)); if(it) out.push(it); };
@@ -269,6 +506,7 @@ const QGen = (function(){
       VITAMINS.forEach(([v,s],i)=>add('bvit'+i,`${v} manbai sifatida qaysi biri to'g'ri?`,s,vs));
       BIO_EXTRA.forEach(([q,c,w],i)=>{ const it=item('bx'+i,q,c,w); if(it) out.push(it); });
     }
+    (HARD[subj]||[]).forEach(([qq,c,w,d],i)=>{ const it=item('hd'+subj+i+'-'+d,qq,c,w); if(it) out.push(it); });
     if(subj==='huquq') HUQUQ.forEach(([q,c,w],i)=>{ const it=item('hq'+i,q,c,w); if(it) out.push(it); });
     return out;
   }
@@ -279,34 +517,43 @@ const QGen = (function(){
   function finitePool(subj){
     if(cache[subj]) return cache[subj];
     const manual=(subj==='logic'?logicBank:(qbank[subj]||[])).map((it,i)=>({id:'q'+subj+i+':'+it.q.slice(0,24),q:it.q,o:it.o.slice(),c:it.c}));
-    return cache[subj]=manual.concat(tableItems(subj));
+    return cache[subj]=manual.concat(tableItems(subj)).map(it=>(it.d=diffOf(subj,it.id),it));
   }
-  function shuffleOpts(it){ const order=shuffle([0,1,2,3]); return {id:it.id,q:it.q,o:order.map(i=>it.o[i]),c:order.indexOf(it.c)}; }
+  function shuffleOpts(it){ const order=shuffle([0,1,2,3]); return {id:it.id,q:it.q,o:order.map(i=>it.o[i]),c:order.indexOf(it.c),d:it.d}; }
 
-  // Returns `count` questions for `subj` the player has not seen (seen = Set of ids).
-  function build(subj,count,seen){
-    seen=seen||new Set();
+  // Player level from total score: 0 Bronza–Kumush, 1 Oltin–Platina, 2 Olmos–Smaragd, 3 Afsonaviy+
+  function levelFor(score){ score=+score||0; return score<2500?0:score<10000?1:score<35000?2:3; }
+  function pickDiff(L){ const w=LEVELS_D[L]||LEVELS_D[0]; let r=Math.random(); for(let d=0;d<4;d++){ if((r-=w[d])<0) return d; } return 1; }
+
+  // Returns `count` questions for `subj` the player has not seen (seen = Set of ids),
+  // matched to the player's level L (0..3) and ordered from easier to harder.
+  function build(subj,count,seen,L){
+    seen=seen||new Set(); L=Math.max(0,Math.min(3,+L||0));
     const out=[], used=new Set();
     const gens=GEN[subj]||[];
     let pool=shuffle(finitePool(subj).filter(q=>!seen.has(q.id)));
     let resetPool=false;
-    // mix: subjects with generators use ~70% generated questions
     for(let k=0;k<count;k++){
-      const wantGen = gens.length && (pool.length===0 || Math.random()<0.7);
+      const t=pickDiff(L);
+      const wantGen = gens.length && (pool.length===0 || t>0 || Math.random()<0.7);   // the fixed bank of these subjects is basic
       let q=null;
       if(wantGen){
-        for(let tries=0;tries<60 && !q;tries++){ const it=pick(gens)(); if(it && !seen.has(it.id) && !used.has(it.id)) q=it; }
+        const ok=gens.filter(f=>f.min<=t);
+        for(let tries=0;tries<60 && !q;tries++){ const it=pick(ok)(t); if(it && !seen.has(it.id) && !used.has(it.id)){ q=it; q.d=t; } }
       }
       if(!q){
         if(!pool.length){ pool=shuffle(finitePool(subj).filter(x=>!used.has(x.id))); resetPool=true; } // every question seen -> start a new cycle
-        q=pool.shift();
-        if(q) q=shuffleOpts(q);
+        // closest difficulty to the target among unseen questions (ties: the easier one)
+        let best=-1, bd=9;
+        for(let i=0;i<pool.length;i++){ const dd=Math.abs((pool[i].d||0)-t)*2+((pool[i].d||0)>t?1:0); if(dd<bd){ bd=dd; best=i; if(dd===0) break; } }
+        if(best>=0){ q=pool.splice(best,1)[0]; q=shuffleOpts(q); }
       }
       if(!q) break;
       used.add(q.id); out.push(q);
     }
+    out.sort((a,b)=>(a.d||0)-(b.d||0));                 // a match warms up, then gets harder
     return {questions:out, resetPool};
   }
   function poolSize(subj){ return finitePool(subj).length + ((GEN[subj]||[]).length ? Infinity : 0); }
-  return { build, poolSize, finitePool, GEN };
+  return { build, poolSize, finitePool, GEN, levelFor };
 })();

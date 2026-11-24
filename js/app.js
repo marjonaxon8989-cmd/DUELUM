@@ -123,6 +123,7 @@ function openIntro(k){
   $('introIc').style.background=s.col+'1f'; $('introIc').style.color=s.col; $('introIc').innerHTML=icon(k,40);
   $('introName').textContent=s.name;
   $('introOnline').textContent=s.on.toLocaleString()+' '+t('online');
+  const L=myLevel(); $('introLevel').innerHTML=`${t('qLevel')}: <b>${t('lvl'+L)}</b>`;
   go('subjIntro');
 }
 function startFromIntro(){ startSearch(pendingSubj); }
@@ -191,7 +192,7 @@ function cancelSearch(){
 function seenKey(){ return profile ? (profile.uid||profile.id||'guest') : 'guest'; }
 function buildMatchQuestions(key,count){
   const seen=Store.getSeen(seenKey(),key);
-  const {questions,resetPool}=QGen.build(key,count,seen);
+  const {questions,resetPool}=QGen.build(key,count,seen,myLevel());
   if(resetPool) Store.clearSeen(seenKey(),key);   // whole pool used up -> start a fresh cycle
   return questions;
 }
@@ -202,9 +203,12 @@ function resetHelpers(){
   fiftyUsed=false; hintUses=0; $('fiftyBtn').disabled=false;
   const hb=$('hintBtn'); hb.disabled=false; hb.style.display=hasPremium()?'flex':'none'; $('hintCount').textContent=2;
 }
-function makeSeed(key,count){ return buildMatchQuestions(key,count).map(q=>({id:q.id,q:q.q,o:q.o,c:q.c})); }
+function makeSeed(key,count){ return buildMatchQuestions(key,count).map(q=>({id:q.id,q:q.q,o:q.o,c:q.c,d:q.d||0})); }
+// question difficulty follows the player's league: 0 Bronza–Kumush … 3 Afsonaviy and above
+function myLevel(){ return QGen.levelFor(profile && profile.score); }
+function diffLabel(d){ return t('diff'+(Math.max(0,Math.min(3,d|0)))); }
 function seedToQs(key,seed){
-  if(seed.length && seed[0].q) return seed.map(x=>({id:x.id,q:x.q,o:x.o.slice(),c:x.c}));
+  if(seed.length && seed[0].q) return seed.map(x=>({id:x.id,q:x.q,o:x.o.slice(),c:x.c,d:x.d||0}));
   const bank = key==='logic' ? logicBank : qbank[key];                     // old challenge format {i,o}
   return seed.map(({i,o})=>{ const it=bank[i]; return {q:it.q,o:o.map(k=>it.o[k]),c:o.indexOf(it.c)}; });
 }
@@ -233,7 +237,7 @@ function loadQ(){
   if(qi>=matchQs.length || qi>=roundLimit()){ endMatch(); return; }
   locked=false;
   const item=currentItem(); markSeen(item);
-  $('subjTag').textContent=subjName(curSubj)+' · '+(qi+1)+'/'+Math.min(roundLimit(),matchQs.length);
+  const cq=matchQs[qi]; $('subjTag').textContent=subjName(curSubj)+' · '+(qi+1)+'/'+Math.min(roundLimit(),matchQs.length)+(cq && cq.d!=null?' · '+diffLabel(cq.d):'');
   $('qText').textContent=item.q;
   $('opts').innerHTML=item.o.map((tx,i)=>`<div class="opt" data-i="${i}" onclick="answer(${i})"><div class="lt">${'ABCD'[i]}</div><div class="tx">${esc(tx)}</div></div>`).join('');
   tleft=QUESTION_SECONDS; clearInterval(timer);
@@ -685,7 +689,7 @@ function hostSetSubj(v){ teamSubj=v; firebase.firestore().collection('rooms').do
 async function hostStart(){
   if(!room||!room.isHost||room.started) return;
   const subj=room.data.subj; curSubj=subj;
-  const qs=buildMatchQuestions(subj,ROUND_LIMIT_TEAM).map(q=>({id:q.id,q:q.q,o:q.o,c:q.c}));
+  const qs=buildMatchQuestions(subj,ROUND_LIMIT_TEAM).map(q=>({id:q.id,q:q.q,o:q.o,c:q.c,d:q.d||0}));
   try{ await Cloud.startRoom(room.id,subj,qs); }catch(e){ toast(cloudErrText(e)); }
 }
 function leaveRoomNow(){ if(room){ Cloud.leaveRoom(room.id,room.isHost); closeRoomState(); } teamState='hub'; renderTeamContent(); }
@@ -949,6 +953,12 @@ function calcPercent(){ if(calcCur==='Error') return; calcCur=calcFmt(parseFloat
 /* ---------- ONLINE: friends, requests, friend duels ---------- */
 let followFeed=[], unsubFollowFeed=null;
 let friendsState=[], friendUsers={}, incomingCh=[], unsubFriends=null, unsubIncoming=null, shownChallengeId=null;
+// Questions already seen live in the account, so another phone/browser does not repeat them.
+async function syncSeen(){
+  try{ const data=await Cloud.seenLoad(); const behind=Store.mergeSeen(seenKey(),data);
+    Object.keys(behind).forEach(subj=>Cloud.seenAdd(subj,null,behind[subj]));
+  }catch(e){ console.warn('seen sync',e); }
+}
 function startCloud(){
   stopCloudWatchers();
   Cloud.onProfile(()=>{ renderProfile(); updateTgBanner(); if($('rating').classList.contains('active')) renderRating(); });
@@ -958,9 +968,10 @@ function startCloud(){
     updateFriendsBadge(); if($('friends').classList.contains('active')) renderFriends();
   });
   startChatsWatch();
+  syncSeen();
   Cloud.touch(); if(!startCloud._vis){ startCloud._vis=1;
     document.addEventListener('visibilitychange',()=>{ if(!Cloud.enabled||!profile) return; document.visibilityState==='visible'?Cloud.touch():Cloud.away(); });
-    window.addEventListener('pagehide',()=>{ if(Cloud.enabled&&profile) Cloud.away(); }); }
+    window.addEventListener('pagehide',()=>{ if(Cloud.enabled&&profile){ Cloud.away(); Cloud.seenFlush(); } }); }
   clearInterval(startCloud._hb); startCloud._hb=setInterval(()=>{ if(document.visibilityState==='visible') Cloud.touch(); },120000);
   updateAdminUi(); checkAdminVerification();
   if(unsubFollowFeed) unsubFollowFeed();

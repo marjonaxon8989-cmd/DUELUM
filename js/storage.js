@@ -44,6 +44,7 @@ const Store = (function(){
   // in Firestore. Nothing about the account is written to localStorage then —
   // Firebase Auth remembers the login by itself.
   const online = () => typeof Cloud !== 'undefined' && Cloud.enabled;
+  const SEEN_CAP = 1500;
 
   return {
     getProfile(){ return online() ? null : getJSON(KEYS.profile, null); },
@@ -58,14 +59,28 @@ const Store = (function(){
     },
     getLang(){ return get(KEYS.lang); },
     setLang(l){ return set(KEYS.lang, l); },
-    // Questions this player has already seen, per subject (kept on this device).
+    // Questions this player has already seen, per subject. Kept on this device AND,
+    // when online, in the player's account (Firestore seen/{uid}) so other devices know too.
     getSeen(user,subj){ return new Set(getJSON('duel_seen_'+user+'_'+subj, [])); },
     addSeen(user,subj,id){
       const k='duel_seen_'+user+'_'+subj, arr=getJSON(k, []);
       if(arr.includes(id)) return; arr.push(id);
-      set(k, JSON.stringify(arr.slice(-3000)));      // cap: oldest ids are forgotten first
+      const trimmed=arr.length>SEEN_CAP; const keep=arr.slice(-SEEN_CAP);   // cap: oldest ids are forgotten first
+      set(k, JSON.stringify(keep));
+      if(online()) Cloud.seenAdd(subj, id, trimmed ? keep : null);
     },
-    clearSeen(user,subj){ set('duel_seen_'+user+'_'+subj,'[]'); },
+    clearSeen(user,subj){ set('duel_seen_'+user+'_'+subj,'[]'); if(online()) Cloud.seenClear(subj); },
+    // merge what the account remembers into this device; returns subjects this device knew more about
+    mergeSeen(user,cloud){
+      const behind={};
+      Object.keys(cloud||{}).forEach(subj=>{ if(!Array.isArray(cloud[subj])) return;
+        const k='duel_seen_'+user+'_'+subj, local=getJSON(k, []), all=new Set(cloud[subj]);
+        let extra=false; local.forEach(id=>{ if(!all.has(id)){ all.add(id); extra=true; } });
+        const keep=[...all].slice(-SEEN_CAP); set(k, JSON.stringify(keep)); if(extra) behind[subj]=keep; });
+      Object.keys(localStorage).forEach(k=>{ const pre='duel_seen_'+user+'_'; if(k.startsWith(pre)){ const subj=k.slice(pre.length);
+        if(!(cloud||{})[subj]){ const local=getJSON(k, []); if(local.length) behind[subj]=local.slice(-SEEN_CAP); } } });
+      return behind;
+    },
     getTheme(){ return get('duel_theme'); },
     setTheme(v){ return set('duel_theme', v); },
     getBellSeen(){ return +(get('duel_bell')||0); },
