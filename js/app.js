@@ -29,7 +29,10 @@ function genRoomId12(){ let s=String(1+Math.floor(Math.random()*9)); for(let i=0
 function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function saveProfile(){ if(profile) Store.setProfile(profile); }
 function initials(n,s){ return esc(((n||'?')[0]||'?').toUpperCase()+((s||'')[0]||'').toUpperCase()); }
-function avatarHtml(u){ return u && u.avatar ? `<img src="${esc(u.avatar)}" alt="">` : initials(u&&u.name,u&&u.surname); }
+function avatarHtml(u){ return (u && u.avatar ? `<img src="${esc(u.avatar)}" alt="">` : initials(u&&u.name,u&&u.surname)) + (isAdminRow(u)?'<i class="goldring"></i>':''); }
+// The admin account is drawn in gold (name, badge, avatar ring) — display only, rights come from firestore.rules
+function isAdminRow(u){ return !!u && typeof ADMIN!=='undefined' && ((ADMIN.uid && u.uid===ADMIN.uid) || (u===profile && typeof Cloud!=='undefined' && Cloud.enabled && Cloud.isAdmin())); }
+function nameHtml(u){ const n=esc((u.name||'')+' '+(u.surname||'')); return isAdminRow(u) ? `<span class="goldname">${n}</span><span class="vbadge gold" title="admin">${icon('check',11)}</span>` : n+(u.verified?verifiedIcon():''); }
 function setAv(el,u){ if(el) el.innerHTML=avatarHtml(u); }
 const fmtNum=n=>Number(n||0).toLocaleString('ru-RU').replace(/ /g,' ');
 
@@ -361,7 +364,7 @@ let ratingCache={};
 function userRow(u,i,val){
   const me=profile && u.uid===profile.uid;
   return `<div class="lbrow${me?' me':''}" onclick="openUser('${esc(u.uid)}')"><div class="lbrank${i<3?' top':''}">${i+1}</div><div class="av">${avatarHtml(u)}</div>
-    <div class="info"><b>${esc(u.name+' '+u.surname)}${u.verified?verifiedIcon():''}</b><span>${leagueName(leagueIdx(u.score))}${u.hideFollowers?'':' · '+fmtNum(u.followers||0)+' '+t('followersShort')}</span></div>
+    <div class="info"><b>${nameHtml(u)}</b><span>${leagueName(leagueIdx(u.score))}${u.hideFollowers?'':' · '+fmtNum(u.followers||0)+' '+t('followersShort')}</span></div>
     <div class="lbscore">${fmtNum(val)}</div></div>`;
 }
 async function loadBoard(kind){
@@ -387,7 +390,7 @@ function renderRating(){
   ['listA','listB','listC'].forEach(id=>$(id).style.display=online?'flex':'none');
   ['noteA','noteB','noteC'].forEach(id=>$(id).textContent=online?'':t('localRatingNote'));
   if(!online) $('ratRank').textContent='#1'; else if($('rating').classList.contains('active')) renderBoards();
-  $('ratName').textContent=profile.name+' '+profile.surname;
+  $('ratName').innerHTML=nameHtml(profile);
   $('ratId').textContent='ID: '+profile.id;
   $('ratScore').textContent=fmtNum(myScore());
   $('ratMonth').textContent=fmtNum(profile.monthKey===monthKeyNow()?(profile.monthScore||0):0);
@@ -403,7 +406,7 @@ function hasPremium(){ return !!(profile && profile.premium && profile.premium.a
 function renderProfile(){
   if(!profile) return;
   $('pfHandle').textContent=profile.name+' '+profile.surname;
-  $('pfName').innerHTML=esc(profile.name+' '+profile.surname)+(profile.verified?verifiedIcon():'');
+  $('pfName').innerHTML=nameHtml(profile);
   $('pfId').textContent='ID: '+profile.id+(profile.tgUsername?' · @'+profile.tgUsername:'');
   $('pfScore').textContent=fmtNum(myScore());
   $('pfFollowers').textContent=fmtNum(profile.followers||0);
@@ -456,7 +459,7 @@ function renderUserProfile(u,following){
       <div class="pfstats"><div><b>${fmtNum(u.score)}</b><span>${t('score')}</span></div>
       <div class="${hide?'':'tap'}" ${hide?'':`onclick="openPeople('${u.uid}','followers')"`}><b id="upFollowers">${hide?'—':fmtNum(u.followers||0)}</b><span>${t('followers')}</span></div>
       <div class="tap" onclick="openPeople('${u.uid}','following')"><b>${fmtNum(u.following||0)}</b><span>${t('followingLbl')}</span></div></div></div>
-    <div class="pfinfo"><div class="pfname">${esc(u.name+' '+u.surname)}${u.verified?verifiedIcon():''}</div><div class="muted small">ID: ${esc(u.id)}${u.tgUsername?' · @'+esc(u.tgUsername):''}</div>
+    <div class="pfinfo"><div class="pfname">${nameHtml(u)}</div><div class="muted small">ID: ${esc(u.id)}${u.tgUsername?' · @'+esc(u.tgUsername):''}</div>
       <div class="pfbadges">${leagueBadge(u.score)}</div></div>
     <div class="pfactions">
       <button class="btn ${following?'outline':'primary'}" id="followBtn" onclick="toggleFollow('${u.uid}',${following?1:0})">${following?icon('userCheck',18)+' '+t('followingBtn'):t('followBtn')}</button>
@@ -469,7 +472,7 @@ let upUser=null, upFollowing=false;
 // the "three dots" menu on a player's profile
 function openUserMore(){
   if(!upUser) return; const u=upUser, fs=friendStatus(u.uid);
-  openModal(`<div class="av md" style="margin:0 auto 10px">${avatarHtml(u)}</div><h2>${esc(u.name+' '+u.surname)}</h2>
+  openModal(`<div class="av md" style="margin:0 auto 10px">${avatarHtml(u)}</div><h2>${nameHtml(u)}</h2>
     <div class="list sheetlist" style="margin:14px 0 0;text-align:left">
       <div class="listrow" onclick="closeModal();openChatWith('${u.uid}')">${icon('send',20)}<span>${t('messageBtn')}</span></div>
       <div class="listrow" onclick="closeModal();toggleFollow('${u.uid}',${upFollowing?1:0})">${icon(upFollowing?'userCheck':'userPlus',20)}<span>${upFollowing?t('unfollowBtn'):t('followBtn')}</span></div>
@@ -512,7 +515,7 @@ async function openPeople(uid,kind){
     const ids = kind==='followers' ? await Cloud.listFollowers(uid) : await Cloud.listFollowing(uid);
     const users=await Cloud.getUsers(ids); users.forEach(x=>friendUsers[x.uid]=x);
     $('peopleList').innerHTML = users.length ? `<div class="urows">${users.sort((a,b)=>b.score-a.score).map(x=>`<div class="urow" onclick="openUser('${x.uid}')"><div class="av">${avatarHtml(x)}</div>
-      <div class="info"><b>${esc(x.name+' '+x.surname)}</b><span>ID ${esc(x.id)} · ${leagueName(leagueIdx(x.score))}</span></div>${followPill(x.uid)}</div>`).join('')}</div>`
+      <div class="info"><b>${nameHtml(x)}</b><span>ID ${esc(x.id)} · ${leagueName(leagueIdx(x.score))}</span></div>${followPill(x.uid)}</div>`).join('')}</div>`
       : `<div class="center-empty">${icon('users',40)}<span>${kind==='followers'?t('noFollowers'):t('noFollowing')}</span></div>`;
   }catch(e){ $('peopleList').innerHTML=`<div class="note">${cloudErrText(e)}</div>`; }
 }
@@ -557,7 +560,7 @@ async function runSearch(q){
     if(seq!==searchSeq) return;
     rows.forEach(u=>friendUsers[u.uid]=u);
     box.innerHTML = rows.length ? `<div class="urows">${rows.map(u=>`<div class="urow" onclick="openUser('${u.uid}')"><div class="av">${avatarHtml(u)}</div>
-      <div class="info"><b>${esc(u.name+' '+u.surname)}</b><span>ID ${esc(u.id)} · ${leagueName(leagueIdx(u.score))} · ${fmtNum(u.followers||0)} ${t('followersShort')}</span></div>
+      <div class="info"><b>${nameHtml(u)}</b><span>ID ${esc(u.id)} · ${leagueName(leagueIdx(u.score))} · ${fmtNum(u.followers||0)} ${t('followersShort')}</span></div>
       ${icon('chevron',18)}</div>`).join('')}</div>` : `<div class="note">${t('friendNotFound')}</div>`;
   }catch(e){ console.warn(e); if(seq===searchSeq) box.innerHTML=`<div class="note">${cloudErrText(e)}</div>`; }
 }
@@ -743,7 +746,7 @@ function openBell(refresh){
   const fol=followFeed.slice(0,30).map(f=>{ const u=friendUsers[f.from]; if(!u) return '';
     const isNew=f.at>(refresh?(openBell._seen||seen):seen);
     return `<div class="bellitem${isNew?' new':''}" onclick="closeBell();openUser('${f.from}')" style="cursor:pointer"><div class="av">${avatarHtml(u)}</div>
-      <div class="bt"><b>${esc(u.name+' '+u.surname)}</b><span>${t('followedYou')} · ${timeShort(f.at)}</span></div>${followPill(f.from)}</div>`; }).join('');
+      <div class="bt"><b>${nameHtml(u)}</b><span>${t('followedYou')} · ${timeShort(f.at)}</span></div>${followPill(f.from)}</div>`; }).join('');
   $('bellList').innerHTML=(fol?`<div class="secTitle" style="margin:6px 0">${t('newFollowers')}</div>${fol}<div class="secTitle" style="margin:14px 0 6px">${t('notifications')}</div>`:'')+items.join('');
   if(!refresh){ openBell._seen=seen; $('bellOverlay').classList.add('on'); }
   // "seen" = now, or the newest follower time if the server clock is ahead of this phone
@@ -990,7 +993,7 @@ function stopCloudWatchers(){
   unsubFriends=unsubIncoming=null; friendsState=[]; incomingCh=[]; clearInterval(startCloud._t); updateFriendsBadge(); closeModal();
 }
 function updateFriendsBadge(){ const n=friendsState.filter(f=>f.incoming).length+incomingCh.length; const b=$('friendsBadge'); b.textContent=n; b.style.display=n?'flex':'none'; updateBellDot(); }
-function userLabel(u){ return u?esc(u.name+' '+u.surname):'…'; }
+function userLabel(u){ return u?nameHtml(u):'…'; }
 function personRow(u,uid,sub,actions){ return `<div class="urow"><div class="av" onclick="openUser('${uid}')">${avatarHtml(u)}</div><div class="info" onclick="openUser('${uid}')"><b>${userLabel(u)}</b><span>${sub}</span></div><div class="actions">${actions}</div></div>`; }
 function renderFriends(){
   const box=$('friendsCloud'); if(!box) return;
@@ -1110,7 +1113,7 @@ async function openChatWith(other){
   try{ cid=await Cloud.ensureChat(other); }
   catch(e){ console.warn(e); toast(e&&e.code==='permission-denied'?t('chatNeedFollow'):cloudErrText(e)); return; }
   stopChat(); chatCid=cid; chatOther=other; lastChatOther=other;
-  $('chatName').textContent=u?u.name+' '+u.surname:''; $('chatSub').textContent=u?'ID '+u.id:''; $('chatAv').innerHTML=avatarHtml(u);
+  $('chatName').innerHTML=u?nameHtml(u):''; $('chatSub').textContent=u?'ID '+u.id:''; $('chatAv').innerHTML=avatarHtml(u);
   $('msgList').innerHTML='<div class="note">…</div>'; $('msgInput').value='';
   go('chat');
   unsubMsgs=Cloud.watchMessages(cid,renderMsgs);
@@ -1252,7 +1255,7 @@ function renderAdmin(){
   if(q) list=list.filter(u=>(u.name+' '+u.surname).toLowerCase().includes(q) || (u.id||'').includes(q) || (u.phone||'').includes(q));
   list.sort((a,b)=> adminFilter==='online' ? b.lastSeen-a.lastSeen : (b.lastSeen-a.lastSeen));
   $('adminList').innerHTML = list.length ? list.map(u=>`<div class="urow" onclick="openAdminUser('${u.uid}')"><div class="av">${avatarHtml(u)}</div>
-    <div class="info"><b>${esc(u.name+' '+u.surname)}${u.verified?verifiedIcon():''}</b><span>ID ${esc(u.id)} · ${fmtNum(u.score)} ${t('score')} · ${isOnline(u)?`<span class="onl">${t('online2')}</span>`:ago(u.lastSeen)}</span></div>
+    <div class="info"><b>${nameHtml(u)}</b><span>ID ${esc(u.id)} · ${fmtNum(u.score)} ${t('score')} · ${isOnline(u)?`<span class="onl">${t('online2')}</span>`:ago(u.lastSeen)}</span></div>
     ${icon('chevron',18)}</div>`).join('') : `<div class="note">${adminFilter==='online'?t('admNoOnline'):t('friendNotFound')}</div>`;
 }
 function adminSetFilter(f){ adminFilter=f; renderAdmin(); }
@@ -1271,7 +1274,7 @@ async function openAdminUser(uid){
     const people=(ids)=>ids.length?ids.map(id=>`<span class="chipname" onclick="openAdminUser('${id}')">${nm(id)}</span>`).join(''):'—';
     $('adminUserBox').innerHTML=`
       <div class="pfhead"><div class="av xl">${avatarHtml(u)}</div><div class="pfinfo" style="padding:0">
-        <div class="pfname">${esc(u.name+' '+u.surname)}${u.verified?verifiedIcon():''}</div>
+        <div class="pfname">${nameHtml(u)}</div>
         <div class="muted small">${isOnline(u)?`<span class="onl">● ${t('online2')}</span>`:t('lastSeenLbl')+': '+ago(u.lastSeen)}</div></div></div>
       <div class="card kvcard">
         ${row(t('name'),esc(u.name))}${row(t('surname'),esc(u.surname))}${row(t('phone'),esc(priv.phone||'—'))}${row('ID',esc(u.id))}
